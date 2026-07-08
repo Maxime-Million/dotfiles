@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=init wallpaper
+Exec=/home/maxime/.config/hypr/scripts/init-wallpaper.sh
+Icon=image-loading
+Terminal=false
+Type=Application
+Categories=System;

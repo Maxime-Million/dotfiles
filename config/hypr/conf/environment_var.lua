@@ -1,0 +1,10 @@
+-- Environment variables configuration
+hl.env("XCURSOR_SIZE", "24")
+hl.env("HYPRCURSOR_SIZE", "24")
+hl.env("XCURSOR_THEME", "Nordzy-cursors")
+hl.env("HYPRCURSOR_THEME", "Nordzy-cursors")
+hl.env("ADW_DISABLE_PORTAL", "1")
+hl.env("GTK_THEME", "Adwaita-dark")
+hl.env("COLORTERM", "truecolor")
+hl.env("QT_QPA_PLATFORMTHEME", "qt5ct")
+hl.env("GDK_BACKEND", "wayland,x11")

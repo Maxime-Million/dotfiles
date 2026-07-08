@@ -1,0 +1,17 @@
+#!/bin/bash
+
+echo "Menu d'aide pour les scripts disponibles custom :"
+
+if [ -x "$(command -v quote)" ]; then
+    echo -e "\n($(which quote)) :"
+    quote --help
+else
+    echo "Le script quote n'est pas installé."
+fi
+
+if [ -x "$(command -v night_mode)" ]; then
+    echo -e "\n($(which night_mode)) :"
+    night_mode --help
+else
+    echo "Le script night_mode n'est pas installé."
+fi

@@ -1,0 +1,35 @@
+#!/bin/bash
+
+case "$1" in
+    true)
+        systemctl --user enable --now night-mode.timer
+        STATUS="<b><span color='#b3fa87'>ACTIVÉ</span></b>"
+        echo "✅ Night Mode activées."
+        ;;
+    false)
+        systemctl --user stop night-mode.timer
+        hyprshade off
+        STATUS="<b><span color='#fab387'>DÉSACTIVÉ</span></b>"
+        echo "❌ Night Mode désactivées."
+        ;;
+    "")
+        if [ $(systemctl --user is-active night-mode.timer) = "active" ]; then
+            echo "État actuel : ACTIVÉ"
+        else
+            echo "État actuel : DÉSACTIVÉ"
+        fi
+        exit 0
+        ;;
+    *)
+        echo "Usage: night_mode [true|false]
+        true  - Activer le script de Night Mode
+        false - Désactiver le script de Night Mode"
+        exit 1
+        ;;
+esac
+
+notify-send -t 1000 \
+    -a "night_mode_notif" \
+    -h string:x-mako-stack-tag:"night_mode_status" \
+    --hint=boolean:transient:true \
+    "Night Mode" "$STATUS"

@@ -1,0 +1,41 @@
+#!/bin/bash
+
+SCRIPT_PATH="$HOME/.config/hypr/scripts/random-quote.sh"
+
+if [ ! -f "$SCRIPT_PATH" ]; then
+    notify-send -u critical "Erreur" "Script de citations introuvable."
+    exit 1
+fi
+
+case "$1" in
+    true)
+        chmod +x "$SCRIPT_PATH"
+        STATUS="<b><span color='#b3fa87'>ACTIVÉ</span></b>"
+        echo "✅ Citations activées."
+        ;;
+    false)
+        chmod -x "$SCRIPT_PATH"
+        STATUS="<b><span color='#fab387'>DÉSACTIVÉ</span></b>"
+        echo "❌ Citations désactivées."
+        ;;
+    "")
+        if [ -x "$SCRIPT_PATH" ]; then
+            echo "État actuel : ACTIVÉ"
+        else
+            echo "État actuel : DÉSACTIVÉ"
+        fi
+        exit 0
+        ;;
+    *)
+        echo "Usage: quote [true|false]
+        true  - Activer le script de citations
+        false - Désactiver le script de citations"
+        exit 1
+        ;;
+esac
+
+notify-send -t 1000 \
+    -a "quote_notif" \
+    -h string:x-mako-stack-tag:"quote_status" \
+    --hint=boolean:transient:true \
+    "Citations" "$STATUS"
