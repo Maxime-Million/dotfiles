@@ -1,0 +1,71 @@
+version: 1
+
+general:
+  ui_type: native
+  theme: dark
+
+  theme_colors:
+    bg_base: "#161616ff"
+    bg_input: "#262626ff"
+    accent: "#ee5396ff"
+    accent_hover: "#ff7eb6ff"
+    text_main: "#ffffffaa"
+    text_muted: "#ffffff66"
+    selection_bg: "#262626"
+    border: "#525252"
+
+  # Police identique à fuzzel
+  font_family: "JetBrainsMono Nerd Font"
+  font_size: 16
+  window_width: 450
+  window_height: 550
+  padding: 20
+
+addons:
+  currency:
+    enabled: false
+  calculator:
+    enabled: true
+    # Pas de trigger, tape directement: 2+2, sqrt(16), etc.
+    # Entrée → copie le résultat dans le presse-papier
+
+  file_browser:
+    enabled: true
+    show_hidden: false
+    # Tape / pour naviguer depuis root
+    # Tape ~ pour naviguer depuis home
+    # Ctrl+H pour afficher/cacher les fichiers cachés
+    # Alt+Entrée → copie le chemin dans le presse-papier
+
+  web_searches:
+    - name: "Google"
+      keyword: "g"
+      url: "https://google.com/search?q={query}"
+      icon: "google"
+    - name: "GitHub"
+      keyword: "gh"
+      url: "https://github.com/search?q={query}&type=repositories"
+      icon: "github"
+    - name: "Wikipedia FR"
+      keyword: "wiki"
+      url: "https://fr.wikipedia.org/wiki/Special:Search?search={query}"
+      icon: "wikipedia"
+
+    # use emocli pour rechercher des emojis
+  script_filters:
+    - name: "Emojis"
+      keyword: "<"
+      command: "/home/maxime/.config/raffi/scripts/raffi-emocli.sh"
+      action: "echo -n '{value}' | wl-copy"
+
+    - name: "Symbols"
+      keyword: ">"
+      command: "/home/maxime/.config/raffi/scripts/raffi-symbols.sh"
+      action: "echo -n '{value}' | wl-copy"
+
+    - name: "Wake on LAN"
+      keyword: ":"
+      command: "python3"
+      args: ["/home/maxime/.config/raffi/scripts/wol_list.py"]
+      icon: "network-wired"
+      action: "wakeonlan {value}"

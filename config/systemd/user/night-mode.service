@@ -1,0 +1,6 @@
+[Unit]
+Description=Gestion automatique du shader et de la luminosité
+
+[Service]
+Type=oneshot
+ExecStart=%h/.config/hypr/scripts/night_mode.sh

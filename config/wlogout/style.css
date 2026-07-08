@@ -1,0 +1,41 @@
+window {
+    background-color: rgba(30, 30, 46, 0.3);
+}
+
+button {
+    background-color: rgba(30, 30, 46, 0.8);
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 35%;
+    border: 2px solid #89b4fa;
+    border-radius: 15px;
+
+    margin: 10px;
+    min-width: 100px;
+    min-height: 100px;
+
+    color: #cdd6f4;
+    font-family: "JetBrainsMono Nerd Font";
+    font-size: 14px;
+    transition: all 0.2s ease-in-out;
+}
+
+button:focus, button:active, button:hover {
+    background-color: rgba(137, 180, 250, 0.8);
+    border-color: #ffffff;
+    color: #1e1e2e;
+    outline-style: none;
+}
+
+/* Icônes (si tu as des icônes dans /usr/share/wlogout/icons) */
+#lock {
+    background-image: image(url("/usr/share/wlogout/icons/lock.png"));
+}
+
+#reboot {
+    background-image: image(url("/usr/share/wlogout/icons/reboot.png"));
+}
+
+#shutdown {
+    background-image: image(url("/usr/share/wlogout/icons/shutdown.png"));
+}

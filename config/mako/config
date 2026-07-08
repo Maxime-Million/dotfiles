@@ -1,0 +1,75 @@
+# --- CONFIGURATION GLOBALE ---
+max-history=0
+sort=-time
+
+# Design (Glassmorphism)
+font=JetBrainsMono Nerd Font 10
+width=400
+height=100
+margin=15
+padding=15
+border-size=2
+border-radius=12
+icons=1
+max-icon-size=48
+
+# Couleurs (Thème sombre avec transparence)
+background-color=#1e1e2eE6
+border-color=#263B46
+text-color=#cdd6f4
+
+# --- GESTION DES ICÔNES ---
+icon-path=/usr/share/icons/breeze-dark/status/16/:/usr/share/icons/Adwaita/32x32/status/
+
+default-timeout=5000
+ignore-timeout=0
+layer=overlay
+anchor=top-right
+
+# --- RÈGLE SPÉCIFIQUE POUR LE CLAVIER ---
+[urgency=low]
+border-color=#7F5056
+default-timeout=1000
+
+[urgency=normal]
+border-color=#0594D0
+default-timeout=3000
+
+[urgency=critical]
+border-color=#A3232B
+default-timeout=0
+
+[app-name="Clavier"]
+border-color=#EBB016
+width=220
+max-icon-size=32
+default-timeout=1500
+font=JetBrainsMono Nerd Font Bold 11
+
+[app-name=quote_notif]
+border-color=#b3fa87
+width=160
+default-timeout=1500
+font=JetBrainsMono Nerd Font Bold 11
+
+[app-name=battery_notif]
+output=eDP-1
+border-color=#f38ba8
+background-color=#1e1e2e
+width=250
+text-alignment=center
+border-size=4
+default-timeout=0
+group-by=app-name
+anchor=top-center
+
+[app-name=battery_urgent]
+output=eDP-1
+anchor=center
+width=500
+border-size=10
+border-color=#f38ba8
+background-color=#f38ba8
+# On met le texte en noir sur fond rouge pour que ça pète
+text-color=#11111b
+default-timeout=0

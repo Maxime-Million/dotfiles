@@ -1,0 +1,179 @@
+@import "../../.cache/wal/colors-waybar.css";
+
+* {
+
+    font-family: JetBrainsMono;
+    font-size: 15px;
+    font-weight: bold;
+    padding-top: 1px;
+    padding-bottom: 2px;
+
+}
+
+
+window#waybar {
+    padding-bottom: 30px;
+    margin-bottom: 30px;
+    background-color: rgba(17, 17, 27, 0.80);
+}
+
+
+tooltip {
+    background-color: rgba(137, 180, 250, 0.22);
+    border: 2px solid;
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+/*-Надпись-*/
+tooltip label {
+    color: rgb(205, 214, 244);
+}
+
+
+/* #workspaces button, */
+#tray,
+#pulseaudio,
+#battery,
+#disk {
+    border-radius: 20px;
+    border: 1px solid;
+    border-color: rgba(255, 255, 255, 0.2);
+    background-color: rgba(137, 180, 250, 0.22);
+    padding: 0 10px;
+    margin: 5px 10px;
+	font-size: 17px;
+    color: rgb(205, 214, 244);
+}
+
+#workspaces {
+    margin-left: 5px;
+}
+
+#workspaces button {
+    all: unset;
+    background-color: rgba(255, 255, 255, 0.06);
+    color: #ffffff;
+    border-radius: 20px;
+    margin: 3px 2px;
+    padding: 4px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+#workspaces button:not(.empty) {
+    background-color: rgba(137, 180, 250, 0.22);
+    color: rgb(205, 214, 244);
+}
+
+#workspaces button.active {
+    background-color: rgb(137, 180, 250);
+    color: #1e1e2e;
+}
+
+#workspaces button.urgent {
+    background-color: rgba(250, 179, 135, 0.20);
+    color: #fab387;
+    border: 1px solid rgba(250, 179, 135, 0.50);
+}
+
+#workspaces button:hover {
+    background-color: rgba(137, 180, 250, 0.35);
+    color: #ffffff;
+}
+
+#workspaces button.active:hover {
+    background-color: #b8d4ff;
+    color: #1e1e2e;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.90);
+}
+
+#workspaces button.urgent:hover {
+    background-color: rgba(250, 179, 135, 0.40);
+    color: #fab387;
+}
+
+
+
+#custom-weather,
+#clock {
+    background-color: rgba(137, 180, 250, 0.22);
+    color: rgb(205, 214, 244);
+    font-size: 17px;
+    margin: 3px;
+    padding: 0 10px;
+    border: 1px solid;
+    border-radius: 20px;
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+#clock {
+    min-width: 0;
+}
+
+#custom-weather {
+    margin-left: 10px;
+}
+
+#custom-music {
+    background-color: rgba(137, 180, 250, 0.22);
+    padding: 0 10px;
+    margin: 5px;
+    font-size: 17px;
+    color: rgb(205, 214, 244);
+    border-radius : 20px;
+    border: 1px solid;
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+#pulseaudio {
+    font-size: 17px;
+    padding: 0 7.5px;
+    margin: 5px 0 5px 0;
+    border-radius: 0;
+}
+
+#pulseaudio.2 {
+    padding: 0 7.5px 0 12px;
+    margin: 5px 0 5px 0;
+    border-radius: 20px 0 0 20px;
+}
+
+#battery {
+    padding: 0 7.5px;
+    margin: 5px 0 5px 0;
+    border-radius: 0;
+}
+
+#disk {
+    padding: 0 7.5px;
+    font-size: 17px;
+    margin: 5px 0 5px 0;
+    border-radius: 0;
+}
+
+#custom-arch-logo {
+    background-color: rgba(137, 180, 250, 0.22);
+    color: rgb(205, 214, 244);
+    font-size: 17px;
+    margin: 4px 5px 3px 0;
+    padding: 5px 14px 5px 7.5px;
+    border: 1px solid;
+    border-radius: 0 20px 20px 0;
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+#custom-power-mode,
+#custom-show-ip {
+    background-color: rgba(137, 180, 250, 0.22);
+    color: rgb(205, 214, 244);
+    font-size: 17px;
+    margin: 5px 0 5px 0;
+    padding: 0 7.5px 0 7.5px;
+    border: 1px solid;
+    border-radius: 0;
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+#custom-power-mode {
+    padding: 0 10px 0 7.5px;
+}
+

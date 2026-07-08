@@ -1,0 +1,146 @@
+{
+	"layer": "top",
+	"position": "top",
+
+	"modules-left": ["hyprland/workspaces", "custom/music"],
+	"modules-center": ["group/weather-group"],
+	"modules-right": ["tray", "pulseaudio#2", "pulseaudio", "battery", "group/arch-menu"],
+
+	"hyprland/workspaces": {
+		"format": "{id}{icon}",
+		"format-icons": {
+			"urgent": "!",
+			"active": "",
+			"default": ""
+		},
+		"sort-by-number": true,
+		"on-click": "activate"
+	},
+
+	"custom/music": {
+		"format": "{}",
+		"interval": 1,
+		"exec": "playerctl metadata --format '󰎈 {{title}} - {{artist}}'",
+		"tooltip": false,
+		"on-click-middle": "playerctl play-pause",
+		"on-click": "playerctl previous",
+		"on-click-right": "playerctl next",
+		"max-length": 40
+	},
+
+	"group/weather-group": {
+		"orientation": "horizontal",
+		"drawer": {
+			"transition-duration": 300,
+			"children-class": "weather",
+			"transition-left-to-right": true
+		},
+		"modules": ["clock", "custom/weather"]
+	},
+
+	"clock": {
+		"format": "{:%H:%M:%S}",
+		"format-alt": "{:%A, %d %B, %Y}",
+		"timezone": "Europe/Paris",
+		"locale": "fr_FR.UTF-8",
+		"tooltip": true,
+		"tooltip-format": "<big>{:%Y %B}</big>\n<tt><small>{calendar}</small></tt>",
+		"interval": 1
+	},
+
+	"custom/weather": {
+		"format": "{}",
+		"interval": 10,
+		"exec": "~/.config/waybar/weather.sh",
+		"tooltip": false
+	},
+
+	"tray": {
+		"icon-size": 21,
+		"spacing": 10
+	},
+
+	"pulseaudio#2": {
+		"format": "{format_source}",
+		"format-source-muted": "󰍭",
+		"format-source": "󰍬",
+		"on-click": "pactl set-source-mute 0 toggle",
+		"tooltip": false
+	},
+
+	"pulseaudio": {
+		"format": "{icon} {volume}%",
+		"format-bluetooth": "{icon} {volume}%",
+		"format-bluetooth-muted": "{icon} ",
+		"format-muted": "󰸈",
+		"format-icons": {
+				"headphone": "",
+				"hands-free": "",
+				"headset": "",
+				"phone": "",
+				"portable": "",
+				"car": "",
+				"default": ["", "", ""]
+		},
+		"on-click": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle",
+		"on-click-right": "pavucontrol",
+		"tooltip": false
+	},
+
+	"battery": {
+		"bat": "BAT1",
+		"format": "{icon} {capacity}%",
+		"format-charging": "󱐋 {capacity}%",
+		"format-plugged": "󱐋 {capacity}%",
+		"format-icons": {
+			"default": ["<span color='red'></span>", "<span color='orange'></span>", "", "", ""]
+		},
+		"format-full": "󰂄 {capacity}%",
+		"tooltip": true,
+		"tooltip-format": "Battery: {capacity}%\n{time}",
+		"interval": 4
+	},
+
+	"group/arch-menu": {
+		"orientation": "horizontal",
+		"drawer": {
+			"transition-duration": 300,
+			"children-class": "menu-item",
+			"transition-left-to-right": false
+		},
+		"modules": [
+			"custom/arch-logo",
+			"disk",
+			"custom/power-mode",
+			"custom/show-ip"
+		]
+	},
+
+	"custom/arch-logo": {
+		"format": "󰣇",
+		"tooltip": false
+	},
+
+	"custom/power-mode": {
+		"exec": "~/.config/waybar/power_mode.sh status",
+		"on-click": "~/.config/waybar/power_mode.sh toggle",
+		"return-type": "json",
+		"signal": 9,
+		"interval": "once"
+	},
+
+	"custom/show-ip": {
+		"format": "{}",
+		"exec": "~/.config/waybar/show_ip.sh",
+		"on-click": "~/.config/waybar/show_ip.sh click",
+		"interval": 1,
+		"tooltip": false
+	},
+
+	"disk": {
+		"format": "󰋊",
+		"path": "/",
+		"tooltip": true,
+		"tooltip-format": "{used} / {total} utilisés ({percentage_used}%)"
+	}
+}
