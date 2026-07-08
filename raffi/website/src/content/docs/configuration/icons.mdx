@@ -1,0 +1,231 @@
+---
+title: Icons
+description: Configure icon discovery, caching, and paths for Raffi entries
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Overview
+
+Raffi supports icons from system icon themes. Icons are automatically discovered from standard XDG directories and cached for performance.
+When an entry does not resolve an icon directly, Raffi now tries to infer one from installed `.desktop` files and finally falls back to a bundled generic icon.
+
+## Icon Specification
+
+Specify icons by their theme name:
+
+```yaml
+launchers:
+  firefox:
+    binary: firefox
+    description: "Firefox"
+    icon: firefox
+```
+
+Raffi searches for icons in system icon directories and uses the icon name to look up the full path.
+
+If `icon` is omitted, Raffi first tries likely launcher candidates such as the configured binary name and non-option arguments. This helps wrapper launchers still pick up a matching system icon.
+
+## Icon Discovery
+
+Raffi discovers icons from standard XDG directories:
+
+- `$XDG_DATA_HOME/icons` (defaults to `~/.local/share/icons`)
+- `$XDG_DATA_DIRS/icons` (defaults to `/usr/local/share/icons:/usr/share/icons`)
+- `$XDG_DATA_HOME/pixmaps`
+- `$XDG_DATA_DIRS/pixmaps`
+
+### Supported Formats
+
+Raffi supports:
+
+- PNG images (`.png`)
+- SVG images (`.svg`)
+
+### Icon Size Preference
+
+Raffi renders icons at 48×48 pixels and prefers larger source icons for better quality:
+
+1. **Scalable icons** (from `scalable/` directories) are prioritized
+2. **48×48 or larger** icons are preferred over smaller sizes
+3. If multiple sizes exist, the **largest** icon is selected
+
+For example, given these icon paths:
+
+```
+/usr/share/icons/Papirus/16x16/apps/firefox.png
+/usr/share/icons/Papirus/48x48/apps/firefox.png
+/usr/share/icons/Papirus/scalable/apps/firefox.svg
+```
+
+Raffi selects the scalable SVG for best quality.
+
+## Automatic Fallbacks
+
+When a launcher icon is missing, Raffi resolves icons in this order:
+
+1. Explicit icon path or theme icon name from the launcher config
+2. Binary name or other likely launcher arguments
+3. Matching `Icon=` metadata from installed XDG `.desktop` files
+4. Bundled generic fallback icon
+
+This means entries without an `icon:` field should still display a reasonable system icon when Raffi can infer one.
+
+## Icon Caching
+
+Icon paths are cached to improve startup performance.
+
+### Cache Location
+
+```
+$XDG_CACHE_HOME/raffi/icon.cache
+```
+
+Defaults to `~/.cache/raffi/icon.cache` if `XDG_CACHE_HOME` is not set.
+
+### Cache Format
+
+The cache is a JSON file mapping icon names to absolute paths:
+
+```json
+{
+  "firefox": "/usr/share/icons/Papirus/scalable/apps/firefox.svg",
+  "terminal": "/usr/share/icons/Papirus/48x48/apps/terminal.png",
+  "chromium": "/usr/share/icons/hicolor/scalable/apps/chromium.svg"
+}
+```
+
+### Refreshing the Cache
+
+The cache is automatically generated on first run. To regenerate it:
+
+```bash
+raffi --refresh-cache
+```
+
+Or use the short flag:
+
+```bash
+raffi -r
+```
+
+<Aside type="note">
+Refresh the cache after:
+- Installing a new icon theme
+- Adding custom icons to XDG directories
+- Changing icon theme settings
+</Aside>
+
+## Disabling Icons
+
+Icons can be disabled for faster startup:
+
+### Via Command Line
+
+```bash
+raffi --no-icons
+```
+
+Or:
+
+```bash
+raffi -I
+```
+
+### Via Configuration
+
+```yaml
+general:
+  no_icons: true
+```
+
+<Aside type="note">
+Command-line flags override configuration file settings.
+</Aside>
+
+## Examples
+
+### Icon Name Examples
+
+```yaml
+# System icon by name
+launchers:
+  firefox:
+    binary: firefox
+    description: "Firefox"
+    icon: firefox
+
+  # No icon specified
+  terminal:
+    binary: kitty
+    description: "Terminal"
+```
+
+### Real-World Examples
+
+From the example configuration:
+
+```yaml
+launchers:
+  wally:
+    binary: jumpapp
+    args: ["-X", "wally"]
+    description: "Wally"
+    icon: wally
+    ifexist: wally
+
+  evolution-mail:
+    binary: jumpapp
+    args: ["-t", "Evolution", "-X", "evolution"]
+    description: "Evolution Mail"
+    icon: evolution-mail
+    ifexist: evolution
+
+  signal:
+    binary: jumpapp
+    args: ["-X", "signal", "signal-desktop"]
+    description: "Signal"
+    icon: signal-desktop
+    ifexist: signal-desktop
+
+  golang:
+    binary: jumpapp
+    args: ["-c", "jetbrains-goland", "goland"]
+    description: "Goland"
+    icon: goland
+```
+
+## Troubleshooting
+
+### Icon Not Found
+
+If an icon isn't displaying:
+
+1. **Check icon name**: Verify the icon exists in your theme:
+
+   ```bash
+   find /usr/share/icons -name "firefox.*"
+   ```
+
+2. **Refresh cache**: Icon cache may be outdated:
+
+   ```bash
+   raffi --refresh-cache
+   ```
+
+3. **Add to XDG directories**: Place your icon in a standard XDG icon directory so it can be found by name.
+4. **Check desktop metadata**: For wrapper commands, ensure the target application has a valid `.desktop` file with an `Icon=` entry.
+
+### Custom Icon Directories
+
+To use icons from custom directories, add them to XDG environment variables:
+
+```bash
+export XDG_DATA_DIRS="$HOME/.local/share:/usr/local/share:/usr/share"
+```
+
+Then refresh the cache:
+
+```bash
+raffi --refresh-cache
+```

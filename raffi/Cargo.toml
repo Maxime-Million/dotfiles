@@ -1,0 +1,35 @@
+[package]
+authors = ["Chmouel Boudjnah <chmouel@chmouel.com>"]
+name = "raffi"
+description = "A simple fuzzel launcher based on YAML file"
+version = "0.21.0"
+edition = "2021"
+readme = "README.md"
+license = "Apache-2.0"
+categories = ["command-line-utilities"]
+keywords = ["task", "command", "launch"]
+homepage = "https://github.com/chmouel/raffi"
+documentation = "https://github.com/chmouel/raffi"
+repository = "https://github.com/chmouel/raffi"
+
+[features]
+default = ["wayland"]
+wayland = ["iced", "ureq", "regex", "meval"]
+
+[dependencies]
+anyhow = "1.0.102"
+gumdrop = { version = "0.8.1" }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+serde_yaml = "0.9.34"
+walkdir = "2.5.0"
+fuzzy-matcher = "0.3.7"
+iced = { version = "0.14", features = [
+  "tiny-skia",
+  "image",
+  "svg",
+], optional = true }
+meval = { version = "0.2", optional = true }
+ureq = { version = "3", features = ["json"], optional = true }
+regex = { version = "1.10", optional = true }
+schemars = { version = "1.2", features = ["derive"] }

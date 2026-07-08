@@ -1,0 +1,2797 @@
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Write as _,
+    fs::{self, File},
+    io::{Read, Write},
+    path::{Path, PathBuf},
+    process::Command,
+};
+
+use anyhow::{Context, Result};
+use gumdrop::Options;
+use schemars::JsonSchema;
+use serde::Deserialize;
+use serde_yaml::Value;
+
+pub mod debug;
+pub mod ui;
+
+/// Represents the configuration for each Raffi entry.
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Clone, Default)]
+pub struct RaffiConfig {
+    pub binary: Option<String>,
+    pub args: Option<Vec<String>>,
+    pub icon: Option<String>,
+    pub description: Option<String>,
+    pub ifenveq: Option<Vec<String>>,
+    pub ifenvset: Option<String>,
+    pub ifenvnotset: Option<String>,
+    pub ifexist: Option<String>,
+    pub disabled: Option<bool>,
+    pub script: Option<String>,
+}
+
+/// Configuration for the currency addon
+#[derive(Deserialize, JsonSchema, Debug, Clone)]
+pub struct CurrencyAddonConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub currencies: Option<Vec<String>>,
+    #[serde(default)]
+    pub default_currency: Option<String>,
+    #[serde(default)]
+    pub trigger: Option<String>,
+}
+
+impl Default for CurrencyAddonConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            currencies: None,
+            default_currency: None,
+            trigger: None,
+        }
+    }
+}
+
+/// Configuration for the calculator addon
+#[derive(Deserialize, JsonSchema, Debug, Clone)]
+pub struct CalculatorAddonConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+impl Default for CalculatorAddonConfig {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
+}
+
+/// Configuration for the file browser addon
+#[derive(Deserialize, JsonSchema, Debug, Clone)]
+pub struct FileBrowserAddonConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub show_hidden: Option<bool>,
+}
+
+impl Default for FileBrowserAddonConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            show_hidden: None,
+        }
+    }
+}
+
+/// Default data file names downloaded from the rofimoji project when
+/// the user does not provide an explicit `data_files` list.
+pub const DEFAULT_EMOJI_FILES: &[&str] = &[
+    "emojis_smileys_emotion",
+    "emojis_people_body",
+    "emojis_animals_nature",
+    "emojis_food_drink",
+    "emojis_travel_places",
+    "emojis_activities",
+    "emojis_objects",
+    "emojis_symbols",
+    "emojis_flags",
+    "emojis_component",
+];
+
+/// Configuration for the emoji picker addon
+#[derive(Deserialize, JsonSchema, Debug, Clone)]
+pub struct EmojiAddonConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub trigger: Option<String>,
+    #[serde(default)]
+    pub action: Option<String>,
+    #[serde(default)]
+    pub secondary_action: Option<String>,
+    #[serde(default)]
+    pub data_files: Option<Vec<String>>,
+}
+
+impl Default for EmojiAddonConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            trigger: None,
+            action: None,
+            secondary_action: None,
+            data_files: None,
+        }
+    }
+}
+
+/// Configuration for a script filter addon
+#[derive(Deserialize, JsonSchema, Debug, Clone)]
+pub struct ScriptFilterConfig {
+    pub name: String,
+    pub command: String,
+    pub keyword: String,
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub args: Vec<String>,
+    pub action: Option<String>,
+    pub secondary_action: Option<String>,
+    #[serde(default)]
+    pub env: std::collections::HashMap<String, String>,
+    pub min_query_length: Option<usize>,
+}
+
+/// Configuration for a web search addon
+#[derive(Deserialize, JsonSchema, Debug, Clone)]
+pub struct WebSearchConfig {
+    pub name: String,
+    pub keyword: String,
+    pub url: String,
+    pub icon: Option<String>,
+}
+
+/// A single text snippet entry
+#[derive(Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+pub struct TextSnippet {
+    pub name: String,
+    pub value: String,
+}
+
+/// Configuration for a text snippet source
+#[derive(Deserialize, JsonSchema, Debug, Clone)]
+pub struct TextSnippetSourceConfig {
+    pub name: String,
+    pub keyword: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub snippets: Option<Vec<TextSnippet>>,
+    #[serde(default)]
+    pub file: Option<String>,
+    #[serde(default)]
+    pub command: Option<String>,
+    #[serde(default)]
+    pub directory: Option<String>,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub action: Option<String>,
+    #[serde(default)]
+    pub secondary_action: Option<String>,
+}
+
+/// Container for all addon configurations
+#[derive(Deserialize, JsonSchema, Debug, Clone, Default)]
+pub struct AddonsConfig {
+    #[serde(default)]
+    pub currency: CurrencyAddonConfig,
+    #[serde(default)]
+    pub calculator: CalculatorAddonConfig,
+    #[serde(default)]
+    pub file_browser: FileBrowserAddonConfig,
+    #[serde(default)]
+    pub emoji: EmojiAddonConfig,
+    #[serde(default)]
+    pub script_filters: Vec<ScriptFilterConfig>,
+    #[serde(default)]
+    pub web_searches: Vec<WebSearchConfig>,
+    #[serde(default)]
+    pub text_snippets: Vec<TextSnippetSourceConfig>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// Per-colour overrides for the native UI theme.
+#[derive(Deserialize, JsonSchema, Debug, Clone, Default)]
+pub struct ThemeColorsConfig {
+    pub bg_base: Option<String>,
+    pub bg_input: Option<String>,
+    pub accent: Option<String>,
+    pub accent_hover: Option<String>,
+    pub text_main: Option<String>,
+    pub text_muted: Option<String>,
+    pub selection_bg: Option<String>,
+    pub border: Option<String>,
+}
+
+/// Sort mode for launcher entries when no search query is active
+#[derive(Deserialize, JsonSchema, Debug, Clone, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum SortMode {
+    /// Sort by launch count (most frequently used first)
+    Frequency,
+    /// Sort by last-used time (most recently used first)
+    Recency,
+    /// Combined score: 40% frequency + 60% recency
+    #[default]
+    Hybrid,
+}
+
+/// General configuration for persistent defaults
+#[derive(Deserialize, JsonSchema, Debug, Clone, Default)]
+pub struct GeneralConfig {
+    #[serde(default)]
+    pub ui_type: Option<String>,
+    #[serde(default)]
+    pub default_script_shell: Option<String>,
+    #[serde(default)]
+    pub no_icons: Option<bool>,
+    #[serde(default)]
+    pub theme: Option<String>,
+    #[serde(default)]
+    pub theme_colors: Option<ThemeColorsConfig>,
+    #[serde(default)]
+    pub max_history: Option<u32>,
+    #[serde(default)]
+    pub font_size: Option<f32>,
+    #[serde(default)]
+    pub font_family: Option<String>,
+    #[serde(default)]
+    pub window_width: Option<f32>,
+    #[serde(default)]
+    pub window_height: Option<f32>,
+    #[serde(default)]
+    pub padding: Option<f32>,
+    #[serde(default)]
+    pub sort_mode: SortMode,
+    #[serde(default)]
+    pub fallbacks: Vec<String>,
+}
+
+/// Complete parsed configuration
+pub struct ParsedConfig {
+    pub general: GeneralConfig,
+    pub addons: AddonsConfig,
+    pub entries: Vec<RaffiConfig>,
+}
+
+/// Represents the top-level configuration structure (v1 format).
+#[derive(Deserialize)]
+struct Config {
+    #[serde(default)]
+    #[allow(dead_code)]
+    version: u32,
+    #[serde(default)]
+    general: GeneralConfig,
+    #[serde(default)]
+    addons: AddonsConfig,
+    #[serde(default)]
+    launchers: HashMap<String, Value>,
+}
+
+/// Public schema representation of the v1 config format, used for JSON Schema generation.
+#[derive(JsonSchema)]
+pub struct ConfigSchema {
+    /// Config format version (currently 1)
+    pub version: u32,
+    /// General settings (UI, theme, font, etc.)
+    #[serde(default)]
+    pub general: GeneralConfig,
+    /// Addon configurations (script filters, web searches, etc.)
+    #[serde(default)]
+    pub addons: AddonsConfig,
+    /// Launcher entries keyed by name
+    #[serde(default)]
+    pub launchers: HashMap<String, RaffiConfig>,
+}
+
+/// UI type selection
+#[derive(Debug, Clone, PartialEq)]
+pub enum UIType {
+    Fuzzel,
+    #[cfg(feature = "wayland")]
+    Native,
+}
+
+/// Theme mode selection
+#[derive(Debug, Clone, PartialEq)]
+pub enum ThemeMode {
+    Dark,
+    Light,
+}
+
+impl std::str::FromStr for ThemeMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "dark" => Ok(ThemeMode::Dark),
+            "light" => Ok(ThemeMode::Light),
+            _ => Err(format!(
+                "Invalid theme: {}. Valid options are: dark, light",
+                s
+            )),
+        }
+    }
+}
+
+impl std::str::FromStr for UIType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "fuzzel" => Ok(UIType::Fuzzel),
+            #[cfg(feature = "wayland")]
+            "native" | "wayland" | "iced" => Ok(UIType::Native),
+            #[cfg(not(feature = "wayland"))]
+            "native" | "wayland" | "iced" => Err(
+                "Native UI is not available. Build with the 'wayland' feature to enable it."
+                    .to_string(),
+            ),
+            _ => {
+                #[cfg(feature = "wayland")]
+                {
+                    Err(format!(
+                        "Invalid UI type: {}. Valid options are: fuzzel, native",
+                        s
+                    ))
+                }
+                #[cfg(not(feature = "wayland"))]
+                {
+                    Err(format!("Invalid UI type: {}. Valid options are: fuzzel", s))
+                }
+            }
+        }
+    }
+}
+
+/// Command-line arguments structure.
+#[derive(Debug, Options, Clone)]
+pub struct Args {
+    #[options(help = "print help message")]
+    pub help: bool,
+    #[options(help = "print version")]
+    pub version: bool,
+    #[options(help = "config file location", short = "c")]
+    pub configfile: Option<String>,
+    #[options(help = "print command to stdout, do not run it", short = "p")]
+    pub print_only: bool,
+    #[options(help = "refresh cache", short = "r")]
+    pub refresh_cache: bool,
+    #[options(help = "do not show icons", short = "I")]
+    pub no_icons: bool,
+    #[options(help = "default shell when using scripts", short = "P")]
+    pub default_script_shell: Option<String>,
+    #[options(help = "UI type to use: fuzzel, native (default: fuzzel)", short = "u")]
+    pub ui_type: Option<String>,
+    #[options(help = "initial search query (native mode only)", short = "i")]
+    pub initial_query: Option<String>,
+    #[options(help = "theme: dark, light (default: dark)", short = "t")]
+    pub theme: Option<String>,
+    #[options(help = "print JSON Schema for the config format to stdout")]
+    pub schema: bool,
+    #[options(help = "write debug log to FILE")]
+    pub debug_file: Option<String>,
+}
+
+/// A trait for checking environment variables.
+pub trait EnvProvider {
+    fn var(&self, key: &str) -> Result<String, std::env::VarError>;
+}
+
+/// The default environment provider.
+pub struct DefaultEnvProvider;
+
+impl EnvProvider for DefaultEnvProvider {
+    fn var(&self, key: &str) -> Result<String, std::env::VarError> {
+        std::env::var(key)
+    }
+}
+
+/// A trait for checking if a binary exists.
+pub trait BinaryChecker {
+    fn exists(&self, binary: &str) -> bool;
+}
+
+/// The default binary checker.
+pub struct DefaultBinaryChecker;
+
+impl BinaryChecker for DefaultBinaryChecker {
+    fn exists(&self, binary: &str) -> bool {
+        find_binary(binary)
+    }
+}
+
+/// A trait for providing an icon map.
+pub trait IconMapProvider {
+    fn get_icon_map(&self) -> Result<HashMap<String, String>>;
+}
+
+/// The default icon map provider.
+pub struct DefaultIconMapProvider;
+
+impl IconMapProvider for DefaultIconMapProvider {
+    fn get_icon_map(&self) -> Result<HashMap<String, String>> {
+        read_icon_map()
+    }
+}
+
+/// Extract icon size from path (e.g., "/usr/share/icons/Papirus/48x48/apps/icon.svg" -> 48).
+/// Returns 0 if size cannot be determined.
+fn extract_icon_size(path: &std::path::Path) -> u32 {
+    for component in path.components() {
+        if let std::path::Component::Normal(s) = component {
+            if let Some(s_str) = s.to_str() {
+                // Match patterns like "48x48", "64x64", "scalable"
+                if s_str == "scalable" {
+                    return 512; // Treat scalable as large
+                }
+                if let Some((w, _)) = s_str.split_once('x') {
+                    if let Ok(size) = w.parse::<u32>() {
+                        return size;
+                    }
+                }
+            }
+        }
+    }
+    0
+}
+
+/// Get the icon mapping from system directories.
+/// Prefers larger icons (48x48+) since raffi renders at 48x48.
+fn get_icon_map() -> Result<HashMap<String, String>> {
+    let mut icon_map: HashMap<String, String> = HashMap::new();
+    let mut icon_sizes: HashMap<String, u32> = HashMap::new();
+    let mut data_dirs =
+        std::env::var("XDG_DATA_DIRS").unwrap_or("/usr/local/share/:/usr/share/".to_string());
+    let data_home = std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| {
+        format!(
+            "{}/.local/share/",
+            std::env::var("HOME").unwrap_or_default()
+        )
+    });
+    write!(&mut data_dirs, ":{data_home}")?;
+
+    for datadir in std::env::split_paths(&data_dirs) {
+        for subdir in &["icons", "pixmaps"] {
+            let mut dir = datadir.clone();
+            dir.push(subdir);
+            for entry in walkdir::WalkDir::new(dir)
+                .follow_links(true)
+                .into_iter()
+                .filter_map(Result::ok)
+            {
+                let fname = entry.file_name().to_string_lossy().to_string();
+                if let Some(ext) = entry.path().extension().and_then(|s| s.to_str()) {
+                    if ext == "png" || ext == "svg" {
+                        let icon_name = fname.rsplit_once('.').unwrap().0.to_string();
+                        let icon_path = entry.path().to_string_lossy().to_string();
+                        let new_size = extract_icon_size(entry.path());
+                        let current_size = icon_sizes.get(&icon_name).copied().unwrap_or(0);
+
+                        // Prefer icons >= 48px, or larger than current
+                        if new_size >= current_size || (new_size >= 48 && current_size < 48) {
+                            icon_map.insert(icon_name.clone(), icon_path);
+                            icon_sizes.insert(icon_name, new_size);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(icon_map)
+}
+
+/// Expand `~/` prefix to the user's HOME directory.
+pub(crate) fn expand_tilde(s: &str) -> String {
+    if let Some(stripped) = s.strip_prefix("~/") {
+        format!("{}/{}", std::env::var("HOME").unwrap_or_default(), stripped)
+    } else {
+        s.to_string()
+    }
+}
+
+/// Expand `${VAR}` references to their environment variable values.
+/// Unknown or unset variables expand to an empty string.
+fn expand_env_vars(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '$' && chars.peek() == Some(&'{') {
+            chars.next(); // consume '{'
+            let var_name: String = chars.by_ref().take_while(|&c| c != '}').collect();
+            result.push_str(&std::env::var(&var_name).unwrap_or_default());
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
+/// Expand both `~/` and `${VAR}` in a config value.
+pub(crate) fn expand_config_value(s: &str) -> String {
+    expand_env_vars(&expand_tilde(s))
+}
+
+/// Migrate a v0 config (launcher entries as top-level keys) to v1 format
+/// (entries under a `launchers` key with an explicit `version` field).
+/// Returns `Ok(true)` if migration was performed, `Ok(false)` if already v1+.
+pub fn migrate_config_v0_to_v1(config_path: &str, raw: &mut Value) -> Result<bool> {
+    let mapping = match raw.as_mapping_mut() {
+        Some(m) => m,
+        None => return Ok(false),
+    };
+
+    // If version key exists, no migration needed
+    if mapping.contains_key(Value::String("version".to_string())) {
+        return Ok(false);
+    }
+
+    let reserved = ["general", "addons", "version"];
+    let mut launchers = serde_yaml::Mapping::new();
+    let mut keys_to_move = Vec::new();
+
+    for (key, _) in mapping.iter() {
+        if let Some(k) = key.as_str() {
+            if !reserved.contains(&k) {
+                keys_to_move.push(Value::String(k.to_string()));
+            }
+        }
+    }
+
+    for key in &keys_to_move {
+        if let Some(val) = mapping.remove(key) {
+            launchers.insert(key.clone(), val);
+        }
+    }
+
+    mapping.insert(
+        Value::String("version".to_string()),
+        Value::Number(serde_yaml::Number::from(1u64)),
+    );
+    mapping.insert(
+        Value::String("launchers".to_string()),
+        Value::Mapping(launchers),
+    );
+
+    // Back up original file
+    let backup_path = format!("{config_path}.bak");
+    fs::copy(config_path, &backup_path)
+        .context(format!("Failed to create backup at {backup_path}"))?;
+
+    // Write migrated config
+    let migrated_yaml =
+        serde_yaml::to_string(&raw).context("Failed to serialize migrated config")?;
+    fs::write(config_path, &migrated_yaml)
+        .context(format!("Failed to write migrated config to {config_path}"))?;
+
+    eprintln!("Config migrated to v1 format. Backup saved as {backup_path}");
+    Ok(true)
+}
+
+/// Read the configuration file and return a ParsedConfig.
+pub fn read_config(filename: &str, args: &Args) -> Result<ParsedConfig> {
+    let contents =
+        fs::read_to_string(filename).context(format!("cannot open config file {filename}"))?;
+    let mut raw: Value = serde_yaml::from_str(&contents).context("cannot parse config as YAML")?;
+
+    migrate_config_v0_to_v1(filename, &mut raw)?;
+
+    let config: Config = serde_yaml::from_value(raw).context("cannot parse config")?;
+
+    process_config(config, args)
+}
+
+/// Read config from a reader, accepting both v0 (flat) and v1 (launchers) formats.
+/// Used primarily for tests where no file path is available for migration.
+pub fn read_config_from_reader<R: Read>(reader: R, args: &Args) -> Result<ParsedConfig> {
+    let mut contents = String::new();
+    let mut reader = reader;
+    reader
+        .read_to_string(&mut contents)
+        .context("cannot read config")?;
+    let mut raw: Value = serde_yaml::from_str(&contents).context("cannot parse config")?;
+
+    // For reader-based configs, do an in-memory migration (no file write)
+    if let Some(mapping) = raw.as_mapping_mut() {
+        if !mapping.contains_key(Value::String("version".to_string())) {
+            let reserved = ["general", "addons", "version"];
+            let mut launchers = serde_yaml::Mapping::new();
+            let mut keys_to_move = Vec::new();
+
+            for (key, _) in mapping.iter() {
+                if let Some(k) = key.as_str() {
+                    if !reserved.contains(&k) {
+                        keys_to_move.push(Value::String(k.to_string()));
+                    }
+                }
+            }
+
+            for key in &keys_to_move {
+                if let Some(val) = mapping.remove(key) {
+                    launchers.insert(key.clone(), val);
+                }
+            }
+
+            mapping.insert(
+                Value::String("version".to_string()),
+                Value::Number(serde_yaml::Number::from(1u64)),
+            );
+            mapping.insert(
+                Value::String("launchers".to_string()),
+                Value::Mapping(launchers),
+            );
+        }
+    }
+
+    let config: Config = serde_yaml::from_value(raw).context("cannot parse config")?;
+    process_config(config, args)
+}
+
+/// Common config processing logic shared by read_config and read_config_from_reader.
+fn process_config(config: Config, args: &Args) -> Result<ParsedConfig> {
+    let mut rafficonfigs = Vec::new();
+
+    for value in config.launchers.values() {
+        if value.is_mapping() {
+            let mut mc: RaffiConfig = serde_yaml::from_value(value.clone())
+                .context("cannot parse config entry".to_string())?;
+            mc.binary = mc.binary.map(|s| expand_config_value(&s));
+            mc.icon = mc.icon.map(|s| expand_config_value(&s));
+            mc.ifexist = mc.ifexist.map(|s| expand_config_value(&s));
+            mc.args = mc
+                .args
+                .map(|v| v.into_iter().map(|s| expand_config_value(&s)).collect());
+            if mc.disabled.unwrap_or(false)
+                || !is_valid_config(&mut mc, args, &DefaultEnvProvider, &DefaultBinaryChecker)
+            {
+                continue;
+            }
+            rafficonfigs.push(mc);
+        }
+    }
+
+    let mut addons = config.addons;
+    for sf in &mut addons.script_filters {
+        sf.command = expand_config_value(&sf.command);
+        sf.icon = sf.icon.as_ref().map(|s| expand_config_value(s));
+        sf.action = sf.action.as_ref().map(|s| expand_config_value(s));
+        sf.secondary_action = sf.secondary_action.as_ref().map(|s| expand_config_value(s));
+    }
+    for ws in &mut addons.web_searches {
+        ws.url = expand_config_value(&ws.url);
+        ws.icon = ws.icon.as_ref().map(|s| expand_config_value(s));
+    }
+    for ts in &mut addons.text_snippets {
+        ts.icon = ts.icon.as_ref().map(|s| expand_config_value(s));
+        ts.file = ts.file.as_ref().map(|s| expand_config_value(s));
+        ts.command = ts.command.as_ref().map(|s| expand_config_value(s));
+        ts.directory = ts.directory.as_ref().map(|s| expand_config_value(s));
+    }
+
+    Ok(ParsedConfig {
+        general: config.general,
+        addons,
+        entries: rafficonfigs,
+    })
+}
+
+/// Validate the RaffiConfig based on various conditions.
+fn is_valid_config(
+    mc: &mut RaffiConfig,
+    args: &Args,
+    env_provider: &impl EnvProvider,
+    binary_checker: &impl BinaryChecker,
+) -> bool {
+    if let Some(_script) = &mc.script {
+        if !binary_checker.exists(
+            mc.binary
+                .as_deref()
+                .unwrap_or(args.default_script_shell.as_deref().unwrap_or("bash")),
+        ) {
+            return false;
+        }
+    } else if let Some(binary) = &mc.binary {
+        if !binary_checker.exists(binary) {
+            return false;
+        }
+    } else if let Some(description) = &mc.description {
+        mc.binary = Some(description.clone());
+    } else {
+        return false;
+    }
+
+    mc.ifenveq
+        .as_ref()
+        .is_none_or(|eq| eq.len() == 2 && env_provider.var(&eq[0]).unwrap_or_default() == eq[1])
+        && mc
+            .ifenvset
+            .as_ref()
+            .is_none_or(|var| env_provider.var(var).is_ok())
+        && mc
+            .ifenvnotset
+            .as_ref()
+            .is_none_or(|var| env_provider.var(var).is_err())
+        && mc
+            .ifexist
+            .as_ref()
+            .is_none_or(|exist| binary_checker.exists(exist))
+}
+
+/// Check if a binary exists in the PATH.
+fn find_binary(binary: &str) -> bool {
+    if binary.contains('/') {
+        return Path::new(binary).exists();
+    }
+
+    std::env::var("PATH")
+        .unwrap_or_default()
+        .split(':')
+        .any(|path| Path::new(&format!("{path}/{binary}")).exists())
+}
+
+fn xdg_data_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+
+    if let Ok(data_home) = std::env::var("XDG_DATA_HOME") {
+        dirs.push(PathBuf::from(data_home));
+    } else if let Ok(home) = std::env::var("HOME") {
+        dirs.push(PathBuf::from(home).join(".local/share"));
+    }
+
+    let system_dirs = std::env::var("XDG_DATA_DIRS")
+        .unwrap_or_else(|_| "/usr/local/share:/usr/share".to_string());
+    dirs.extend(std::env::split_paths(&system_dirs));
+
+    dirs
+}
+
+fn desktop_entry_dirs() -> Vec<PathBuf> {
+    xdg_data_dirs()
+        .into_iter()
+        .map(|dir| dir.join("applications"))
+        .collect()
+}
+
+fn parse_bool(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "true" | "1" | "yes"
+    )
+}
+
+fn parse_desktop_entry_keys(contents: &str) -> HashMap<String, String> {
+    let mut in_desktop_entry = false;
+    let mut keys = HashMap::new();
+
+    for line in contents.lines() {
+        let trimmed = line.trim();
+
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            if trimmed == "[Desktop Entry]" {
+                in_desktop_entry = true;
+                continue;
+            }
+
+            if in_desktop_entry {
+                break;
+            }
+
+            continue;
+        }
+
+        if !in_desktop_entry {
+            continue;
+        }
+
+        if let Some((key, value)) = trimmed.split_once('=') {
+            keys.insert(key.trim().to_string(), value.trim().to_string());
+        }
+    }
+
+    keys
+}
+
+fn split_desktop_exec(exec: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut chars = exec.chars().peekable();
+    let mut in_single = false;
+    let mut in_double = false;
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\\' => {
+                if let Some(next) = chars.next() {
+                    current.push(next);
+                }
+            }
+            '\'' if !in_double => in_single = !in_single,
+            '"' if !in_single => in_double = !in_double,
+            c if c.is_whitespace() && !in_single && !in_double => {
+                if !current.is_empty() {
+                    tokens.push(std::mem::take(&mut current));
+                }
+            }
+            _ => current.push(ch),
+        }
+    }
+
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+
+    tokens
+}
+
+fn strip_desktop_exec_field_codes(token: &str) -> String {
+    let mut cleaned = String::with_capacity(token.len());
+    let mut chars = token.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '%' {
+            match chars.peek().copied() {
+                Some('%') => {
+                    cleaned.push('%');
+                    chars.next();
+                }
+                Some(code) if "fFuUdDnNickvm".contains(code) => {
+                    chars.next();
+                }
+                _ => cleaned.push(ch),
+            }
+        } else {
+            cleaned.push(ch);
+        }
+    }
+
+    cleaned.trim().to_string()
+}
+
+fn parse_desktop_exec(exec: &str) -> Option<(String, Vec<String>)> {
+    let mut tokens = split_desktop_exec(exec)
+        .into_iter()
+        .map(|token| strip_desktop_exec_field_codes(&token))
+        .filter(|token| !token.is_empty())
+        .collect::<Vec<_>>();
+
+    if tokens.is_empty() {
+        return None;
+    }
+
+    let binary = tokens.remove(0);
+    Some((binary, tokens))
+}
+
+fn parse_desktop_entry_file(
+    path: &Path,
+    binary_checker: &impl BinaryChecker,
+) -> Option<RaffiConfig> {
+    let contents = fs::read_to_string(path).ok()?;
+    let keys = parse_desktop_entry_keys(&contents);
+
+    if keys.get("Type").map(String::as_str) != Some("Application") {
+        return None;
+    }
+    if keys.get("Hidden").is_some_and(|value| parse_bool(value))
+        || keys.get("NoDisplay").is_some_and(|value| parse_bool(value))
+        || keys.get("Terminal").is_some_and(|value| parse_bool(value))
+    {
+        return None;
+    }
+
+    let exec = keys.get("Exec")?;
+    let name = keys.get("Name")?;
+    let (binary, args) = parse_desktop_exec(exec)?;
+
+    if let Some(try_exec) = keys.get("TryExec") {
+        if !binary_checker.exists(try_exec) {
+            return None;
+        }
+    }
+    if !binary_checker.exists(&binary) {
+        return None;
+    }
+
+    Some(RaffiConfig {
+        binary: Some(binary),
+        args: (!args.is_empty()).then_some(args),
+        icon: keys.get("Icon").cloned(),
+        description: Some(name.clone()),
+        ..Default::default()
+    })
+}
+
+fn detect_desktop_entries_from_dirs(
+    dirs: &[PathBuf],
+    binary_checker: &impl BinaryChecker,
+) -> Vec<RaffiConfig> {
+    let mut seen = HashSet::new();
+    let mut entries = Vec::new();
+
+    for dir in dirs {
+        if !dir.exists() {
+            continue;
+        }
+
+        for entry in walkdir::WalkDir::new(dir)
+            .follow_links(true)
+            .into_iter()
+            .filter_map(Result::ok)
+        {
+            if !entry.file_type().is_file() {
+                continue;
+            }
+            if entry.path().extension().and_then(|ext| ext.to_str()) != Some("desktop") {
+                continue;
+            }
+
+            let Some(config) = parse_desktop_entry_file(entry.path(), binary_checker) else {
+                continue;
+            };
+
+            let key = format!(
+                "{}\u{1f}{}\u{1f}{}",
+                config.description.as_deref().unwrap_or_default(),
+                config.binary.as_deref().unwrap_or_default(),
+                config.args.as_deref().unwrap_or(&[]).join("\u{1f}")
+            );
+            if seen.insert(key) {
+                entries.push(config);
+            }
+        }
+    }
+
+    entries.sort_by(|left, right| {
+        left.description
+            .as_deref()
+            .unwrap_or_default()
+            .cmp(right.description.as_deref().unwrap_or_default())
+    });
+    entries
+}
+
+fn detect_desktop_entries(binary_checker: &impl BinaryChecker) -> Vec<RaffiConfig> {
+    detect_desktop_entries_from_dirs(&desktop_entry_dirs(), binary_checker)
+}
+
+const DEFAULT_ICON_PATH: &str = "assets/default_icon.svg";
+const DEFAULT_ICON_BYTES: &[u8] = include_bytes!("../assets/default_icon.svg");
+const GENERIC_ICON_NAMES: &[&str] = &[
+    "application-x-executable",
+    "application-default-icon",
+    "application-x-desktop",
+];
+
+fn icon_cache_dir() -> PathBuf {
+    PathBuf::from(
+        std::env::var("XDG_CACHE_HOME")
+            .unwrap_or_else(|_| format!("{}/.cache", std::env::var("HOME").unwrap_or_default())),
+    )
+    .join("raffi")
+}
+
+fn is_supported_icon_extension(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|ext| ext.to_str()),
+        Some("png" | "svg")
+    )
+}
+
+fn is_icon_file(path: &Path) -> bool {
+    path.is_file() && is_supported_icon_extension(path)
+}
+
+fn push_icon_candidate(candidates: &mut Vec<String>, seen: &mut HashSet<String>, candidate: &str) {
+    let trimmed = candidate.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+
+    let owned = trimmed.to_string();
+    if seen.insert(owned.clone()) {
+        candidates.push(owned);
+    }
+
+    let Some(file_name) = Path::new(trimmed)
+        .file_name()
+        .and_then(|name| name.to_str())
+    else {
+        return;
+    };
+    if file_name == trimmed {
+        return;
+    }
+
+    let basename = file_name.to_string();
+    if seen.insert(basename.clone()) {
+        candidates.push(basename);
+    }
+}
+
+fn launcher_icon_candidates(config: &RaffiConfig) -> Vec<String> {
+    let mut candidates = Vec::new();
+    let mut seen = HashSet::new();
+
+    if let Some(icon) = config.icon.as_deref() {
+        push_icon_candidate(&mut candidates, &mut seen, icon);
+    }
+    if let Some(binary) = config.binary.as_deref() {
+        push_icon_candidate(&mut candidates, &mut seen, binary);
+    }
+    if let Some(args) = config.args.as_deref() {
+        for arg in args {
+            if arg.starts_with('-') || arg.contains("://") {
+                continue;
+            }
+            push_icon_candidate(&mut candidates, &mut seen, arg);
+        }
+    }
+
+    candidates
+}
+
+fn is_exec_wrapper_binary(candidate: &str) -> bool {
+    matches!(
+        Path::new(candidate)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(candidate),
+        "env" | "sh" | "bash" | "dash" | "zsh"
+    )
+}
+
+fn desktop_exec_icon_candidates(exec: &str, binary_checker: &impl BinaryChecker) -> Vec<String> {
+    let mut candidates = Vec::new();
+    let mut seen = HashSet::new();
+
+    for token in split_desktop_exec(exec)
+        .into_iter()
+        .map(|token| strip_desktop_exec_field_codes(&token))
+        .filter(|token| !token.is_empty())
+    {
+        if token.starts_with('-') || token.contains('=') || is_exec_wrapper_binary(&token) {
+            continue;
+        }
+        if !binary_checker.exists(&token) {
+            continue;
+        }
+        push_icon_candidate(&mut candidates, &mut seen, &token);
+    }
+
+    candidates
+}
+
+fn desktop_entry_icon_map_from_dirs(
+    dirs: &[PathBuf],
+    binary_checker: &impl BinaryChecker,
+) -> HashMap<String, String> {
+    let mut icon_map = HashMap::new();
+
+    for dir in dirs {
+        if !dir.exists() {
+            continue;
+        }
+
+        for entry in walkdir::WalkDir::new(dir)
+            .max_depth(2)
+            .follow_links(true)
+            .into_iter()
+            .filter_map(Result::ok)
+        {
+            if !entry.file_type().is_file() {
+                continue;
+            }
+            if entry.path().extension().and_then(|ext| ext.to_str()) != Some("desktop") {
+                continue;
+            }
+
+            let Ok(contents) = fs::read_to_string(entry.path()) else {
+                continue;
+            };
+            let keys = parse_desktop_entry_keys(&contents);
+
+            if keys.get("Type").map(String::as_str) != Some("Application") {
+                continue;
+            }
+            if keys.get("Hidden").is_some_and(|value| parse_bool(value))
+                || keys.get("NoDisplay").is_some_and(|value| parse_bool(value))
+                || keys.get("Terminal").is_some_and(|value| parse_bool(value))
+            {
+                continue;
+            }
+
+            let Some(icon) = keys.get("Icon").cloned() else {
+                continue;
+            };
+
+            let mut candidates = keys
+                .get("Exec")
+                .map(|exec| desktop_exec_icon_candidates(exec, binary_checker))
+                .unwrap_or_default();
+
+            if let Some(try_exec) = keys.get("TryExec") {
+                if binary_checker.exists(try_exec) && !is_exec_wrapper_binary(try_exec) {
+                    let mut try_exec_seen = candidates.iter().cloned().collect::<HashSet<_>>();
+                    push_icon_candidate(&mut candidates, &mut try_exec_seen, try_exec);
+                }
+            }
+
+            for candidate in candidates {
+                icon_map.entry(candidate).or_insert_with(|| icon.clone());
+            }
+        }
+    }
+
+    icon_map
+}
+
+pub(crate) fn read_desktop_icon_map() -> HashMap<String, String> {
+    desktop_entry_icon_map_from_dirs(&desktop_entry_dirs(), &DefaultBinaryChecker)
+}
+
+fn resolve_icon_reference(icon: &str, icon_map: &HashMap<String, String>) -> Option<String> {
+    let expanded = expand_config_value(icon);
+    if is_icon_file(Path::new(&expanded)) {
+        return Some(expanded);
+    }
+
+    icon_map.get(icon).cloned().or_else(|| {
+        Path::new(icon)
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .and_then(|stem| icon_map.get(stem).cloned())
+    })
+}
+
+fn bundled_default_icon_path() -> Option<String> {
+    let cache_dir = icon_cache_dir();
+    fs::create_dir_all(&cache_dir).ok()?;
+
+    let path = cache_dir.join(Path::new(DEFAULT_ICON_PATH).file_name().unwrap_or_default());
+    let needs_write = fs::read(&path)
+        .map(|contents| contents != DEFAULT_ICON_BYTES)
+        .unwrap_or(true);
+    if needs_write {
+        fs::write(&path, DEFAULT_ICON_BYTES).ok()?;
+    }
+
+    Some(path.to_string_lossy().into_owned())
+}
+
+pub(crate) fn default_icon_path(icon_map: &HashMap<String, String>) -> Option<String> {
+    GENERIC_ICON_NAMES
+        .iter()
+        .find_map(|icon| icon_map.get(*icon).cloned())
+        .or_else(bundled_default_icon_path)
+}
+
+pub(crate) fn resolve_launcher_icon_path(
+    config: &RaffiConfig,
+    icon_map: &HashMap<String, String>,
+    desktop_icon_map: &HashMap<String, String>,
+) -> Option<String> {
+    let candidates = launcher_icon_candidates(config);
+
+    for candidate in &candidates {
+        if let Some(path) = resolve_icon_reference(candidate, icon_map) {
+            return Some(path);
+        }
+    }
+
+    for candidate in &candidates {
+        if let Some(icon) = desktop_icon_map.get(candidate) {
+            if let Some(path) = resolve_icon_reference(icon, icon_map) {
+                return Some(path);
+            }
+        }
+    }
+
+    default_icon_path(icon_map)
+}
+
+fn no_valid_config_message(configfile: &str) -> String {
+    format!(
+        "No valid launchers found.\nChecked: {configfile}\nExpected a YAML config using `version: 1` and a `launchers:` section.\nYou can copy `examples/raffi.yaml` as a starting point, or install desktop applications so Raffi can auto-detect them."
+    )
+}
+
+/// Save the icon map to a cache file.
+fn save_to_cache_file(map: &HashMap<String, String>) -> Result<()> {
+    let cache_dir = icon_cache_dir();
+    fs::create_dir_all(&cache_dir).context("Failed to create cache directory")?;
+
+    let cache_file_path = cache_dir.join("icon.cache");
+    let mut cache_file = File::create(&cache_file_path).context("Failed to create cache file")?;
+    cache_file
+        .write_all(
+            serde_json::to_string(map)
+                .context("Failed to serialize icon map")?
+                .as_bytes(),
+        )
+        .context("Failed to write to cache file")?;
+    Ok(())
+}
+
+/// Clear the icon cache file to force regeneration.
+pub fn clear_icon_cache() -> Result<()> {
+    let cache_path = icon_cache_dir().join("icon.cache");
+    if Path::new(&cache_path).exists() {
+        fs::remove_file(&cache_path).context("Failed to remove icon cache file")?;
+    }
+    Ok(())
+}
+
+/// Clear the cached emoji data files to force re-download.
+pub fn clear_emoji_cache() -> Result<()> {
+    let emoji_dir = icon_cache_dir().join("emoji");
+    if Path::new(&emoji_dir).exists() {
+        fs::remove_dir_all(&emoji_dir).context("Failed to remove emoji cache directory")?;
+    }
+    Ok(())
+}
+
+/// Read the icon map from the cache file or generate it if it doesn't exist.
+pub fn read_icon_map() -> Result<HashMap<String, String>> {
+    let cache_path = icon_cache_dir().join("icon.cache");
+
+    if !Path::new(&cache_path).exists() {
+        let icon_map = get_icon_map()?;
+        save_to_cache_file(&icon_map)?;
+        return Ok(icon_map);
+    }
+
+    let mut cache_file = File::open(&cache_path).context("Failed to open cache file")?;
+    let mut contents = String::new();
+    cache_file
+        .read_to_string(&mut contents)
+        .context("Failed to read cache file")?;
+    serde_json::from_str(&contents).context("Failed to deserialize cache file")
+}
+
+/// Execute the chosen command or script.
+pub fn execute_chosen_command(mc: &RaffiConfig, args: &Args, interpreter: &str) -> Result<()> {
+    // make interepreter with mc.binary and mc.args on the same line
+    let interpreter_with_args = mc.args.as_ref().map_or(interpreter.to_string(), |args| {
+        format!("{} {}", interpreter, args.join(" "))
+    });
+
+    if args.print_only {
+        if let Some(script) = &mc.script {
+            println!("#!/usr/bin/env -S {interpreter_with_args}\n{script}");
+        } else {
+            println!(
+                "{} {}",
+                mc.binary.as_deref().context("Binary not found")?,
+                mc.args.as_deref().unwrap_or(&[]).join(" ")
+            );
+        }
+        return Ok(());
+    }
+    if let Some(script) = &mc.script {
+        let mut command = Command::new(interpreter);
+        command.arg("-c").arg(script);
+        if let Some(args) = &mc.args {
+            command.arg(interpreter);
+            command.args(args);
+        }
+        command.spawn().context("cannot launch script")?;
+    } else {
+        Command::new(mc.binary.as_deref().context("Binary not found")?)
+            .args(mc.args.as_deref().unwrap_or(&[]))
+            .spawn()
+            .context("cannot launch command")?;
+    }
+    Ok(())
+}
+
+/// Percent-encode a query string for use in URLs.
+/// Encodes all characters except unreserved ones (A-Z, a-z, 0-9, '-', '.', '_', '~').
+pub fn url_encode_query(query: &str) -> String {
+    let mut encoded = String::with_capacity(query.len() * 3);
+    for byte in query.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                encoded.push(byte as char);
+            }
+            _ => {
+                write!(encoded, "%{:02X}", byte).unwrap();
+            }
+        }
+    }
+    encoded
+}
+
+/// Build a web search URL by replacing `{query}` in the template with the percent-encoded query,
+/// then open it with `xdg-open`.
+pub fn execute_web_search_url(url_template: &str, query: &str) -> Result<()> {
+    let encoded = url_encode_query(query);
+    let url = url_template.replace("{query}", &encoded);
+    Command::new("xdg-open")
+        .arg(&url)
+        .spawn()
+        .context("cannot open web search URL")?;
+    Ok(())
+}
+
+/// Generate the JSON Schema for the raffi config format.
+fn generate_schema() -> String {
+    let schema = schemars::schema_for!(ConfigSchema);
+    serde_json::to_string_pretty(&schema).expect("Failed to serialize JSON Schema")
+}
+
+pub fn run(args: Args) -> Result<()> {
+    if let Some(ref path) = args.debug_file {
+        debug::init(path);
+        debug_log!("raffi starting, debug log: {path}");
+    }
+
+    if args.version {
+        println!("raffi version 0.1.0");
+        return Ok(());
+    }
+
+    if args.schema {
+        println!("{}", generate_schema());
+        return Ok(());
+    }
+
+    if args.refresh_cache {
+        clear_icon_cache()?;
+        clear_emoji_cache()?;
+    }
+
+    let default_config_path = format!(
+        "{}/.config/raffi/raffi.yaml",
+        std::env::var("HOME").unwrap_or_default()
+    );
+    let configfile = args.configfile.as_deref().unwrap_or(&default_config_path);
+    debug_log!("config: using file {configfile}");
+    let config_exists = Path::new(configfile).exists();
+
+    // Write schema file if it doesn't exist yet
+    let config_dir = Path::new(configfile).parent().unwrap_or(Path::new("."));
+    let schema_path = config_dir.join("raffi-schema.json");
+    if !schema_path.exists() && fs::create_dir_all(config_dir).is_ok() {
+        if let Err(e) = fs::write(&schema_path, generate_schema()) {
+            eprintln!(
+                "Warning: could not write schema file {}: {e}",
+                schema_path.display()
+            );
+        }
+    }
+
+    let mut parsed_config = if config_exists {
+        read_config(configfile, &args).context("Failed to read config")?
+    } else {
+        ParsedConfig {
+            general: GeneralConfig::default(),
+            addons: AddonsConfig::default(),
+            entries: Vec::new(),
+        }
+    };
+    debug_log!("config: loaded {} entries", parsed_config.entries.len());
+
+    if parsed_config.entries.is_empty() {
+        let detected_entries = detect_desktop_entries(&DefaultBinaryChecker);
+        if detected_entries.is_empty() {
+            eprintln!("{}", no_valid_config_message(configfile));
+            std::process::exit(1);
+        }
+
+        eprintln!(
+            "No valid launchers found in {configfile}; using {} auto-detected desktop applications.",
+            detected_entries.len()
+        );
+        parsed_config.entries = detected_entries;
+    }
+
+    // Merge general config: CLI flags override config values
+    let general = &parsed_config.general;
+    let no_icons = args.no_icons || general.no_icons.unwrap_or(false);
+    let ui_type_str = args.ui_type.as_ref().or(general.ui_type.as_ref());
+    let default_script_shell = args
+        .default_script_shell
+        .as_deref()
+        .or(general.default_script_shell.as_deref())
+        .unwrap_or("bash")
+        .to_string();
+
+    // Determine theme
+    let theme_str = args.theme.as_ref().or(general.theme.as_ref());
+    let theme = if let Some(theme_str) = theme_str {
+        theme_str
+            .parse::<ThemeMode>()
+            .map_err(|e| anyhow::anyhow!(e))?
+    } else {
+        ThemeMode::Dark
+    };
+    debug_log!("config: theme={theme:?}");
+
+    // Determine UI type
+    let ui_type = if let Some(ui_type_str) = ui_type_str {
+        ui_type_str
+            .parse::<UIType>()
+            .map_err(|e| anyhow::anyhow!(e))?
+    } else if find_binary("fuzzel") && general.fallbacks.is_empty() {
+        UIType::Fuzzel
+    } else {
+        #[cfg(feature = "wayland")]
+        {
+            UIType::Native
+        }
+        #[cfg(not(feature = "wayland"))]
+        {
+            return Err(anyhow::anyhow!(
+                "No UI backend available. Install 'fuzzel' or build with the 'wayland' feature."
+            ));
+        }
+    };
+
+    if ui_type == UIType::Fuzzel && !general.fallbacks.is_empty() {
+        eprintln!("Warning: fallbacks are configured but ui_type is fuzzel — fallbacks require the native UI. Set ui_type: native to use fallbacks.");
+    }
+
+    debug_log!("config: ui_type={ui_type:?}");
+
+    // Determine max history size
+    let max_history = general.max_history.unwrap_or(10);
+
+    // Determine font sizes (and proportional paddings)
+    let mut font_sizes = if let Some(base) = general.font_size {
+        ui::FontSizes::from_base(base)
+    } else {
+        ui::FontSizes::default_sizes()
+    };
+
+    // Override outer padding if explicitly set
+    if let Some(padding) = general.padding {
+        font_sizes.outer_padding = padding;
+    }
+
+    // Build UI settings
+    let ui_settings = ui::UISettings {
+        no_icons,
+        initial_query: args.initial_query.clone(),
+        theme,
+        theme_colors: parsed_config.general.theme_colors.clone(),
+        max_history,
+        font_sizes,
+        font_family: general.font_family.clone(),
+        window_width: general.window_width.unwrap_or(800.0),
+        window_height: general.window_height.unwrap_or(600.0),
+        sort_mode: general.sort_mode.clone(),
+        fallbacks: general.fallbacks.clone(),
+    };
+
+    debug_log!(
+        "ui: settings: no_icons={} window={}x{} max_history={} sort_mode={:?}",
+        ui_settings.no_icons,
+        ui_settings.window_width,
+        ui_settings.window_height,
+        ui_settings.max_history,
+        ui_settings.sort_mode
+    );
+
+    // Get the appropriate UI implementation
+    let ui = ui::get_ui(ui_type);
+    let chosen = ui
+        .show(&parsed_config.entries, &parsed_config.addons, &ui_settings)
+        .context("Failed to show UI")?;
+
+    let chosen_name = chosen.trim();
+    debug_log!("ui: chosen={chosen_name:?}");
+    if chosen_name.is_empty() {
+        std::process::exit(0);
+    }
+    let mc = parsed_config
+        .entries
+        .iter()
+        .find(|mc| {
+            mc.description.as_deref() == Some(chosen_name)
+                || mc.binary.as_deref() == Some(chosen_name)
+        })
+        .context("No matching configuration found")?;
+
+    let interpreter = if mc.script.is_some() {
+        mc.binary.as_deref().unwrap_or(&default_script_shell)
+    } else {
+        // Not used for binary commands
+        ""
+    };
+    debug_log!(
+        "exec: binary={:?} script={} args={:?}",
+        mc.binary,
+        mc.script.is_some(),
+        mc.args
+    );
+    execute_chosen_command(mc, &args, interpreter).context("Failed to execute command")?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_test_dir(name: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("raffi-{name}-{unique}"));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    #[test]
+    fn test_read_config_from_reader() {
+        let yaml_config = r#"
+        shell:
+          binary: sh
+          description: "Shell"
+        hello_script:
+          script: "echo hello"
+          description: "Hello script"
+        "#;
+        let reader = Cursor::new(yaml_config);
+        let args = Args {
+            help: false,
+            version: false,
+            configfile: None,
+            print_only: false,
+            refresh_cache: false,
+            no_icons: true,
+            default_script_shell: None,
+            ui_type: None,
+            initial_query: None,
+            theme: None,
+            schema: false,
+            debug_file: None,
+        };
+        let parsed_config = read_config_from_reader(reader, &args).unwrap();
+        assert_eq!(parsed_config.entries.len(), 2);
+
+        // Addons should default to enabled
+        assert!(parsed_config.addons.currency.enabled);
+        assert!(parsed_config.addons.calculator.enabled);
+
+        let expected_configs = vec![
+            RaffiConfig {
+                binary: Some("sh".to_string()),
+                description: Some("Shell".to_string()),
+                ..Default::default()
+            },
+            RaffiConfig {
+                description: Some("Hello script".to_string()),
+                script: Some("echo hello".to_string()),
+                ..Default::default()
+            },
+        ];
+
+        for expected_config in &expected_configs {
+            assert!(parsed_config.entries.contains(expected_config));
+        }
+    }
+
+    #[test]
+    fn test_addons_config_parsing() {
+        let yaml_config = r#"
+        addons:
+          currency:
+            enabled: true
+            currencies: ["USD", "EUR", "GBP"]
+          calculator:
+            enabled: false
+        shell:
+          binary: sh
+          description: "Shell"
+        "#;
+        let reader = Cursor::new(yaml_config);
+        let args = Args {
+            help: false,
+            version: false,
+            configfile: None,
+            print_only: false,
+            refresh_cache: false,
+            no_icons: true,
+            default_script_shell: None,
+            ui_type: None,
+            initial_query: None,
+            theme: None,
+            schema: false,
+            debug_file: None,
+        };
+        let parsed_config = read_config_from_reader(reader, &args).unwrap();
+
+        assert!(parsed_config.addons.currency.enabled);
+        assert!(!parsed_config.addons.calculator.enabled);
+        assert_eq!(
+            parsed_config.addons.currency.currencies,
+            Some(vec![
+                "USD".to_string(),
+                "EUR".to_string(),
+                "GBP".to_string()
+            ])
+        );
+        assert_eq!(parsed_config.entries.len(), 1);
+    }
+
+    struct MockEnvProvider {
+        vars: HashMap<String, String>,
+    }
+
+    impl EnvProvider for MockEnvProvider {
+        fn var(&self, key: &str) -> Result<String, std::env::VarError> {
+            self.vars
+                .get(key)
+                .cloned()
+                .ok_or(std::env::VarError::NotPresent)
+        }
+    }
+
+    struct MockBinaryChecker {
+        binaries: Vec<String>,
+    }
+
+    impl BinaryChecker for MockBinaryChecker {
+        fn exists(&self, binary: &str) -> bool {
+            self.binaries.contains(&binary.to_string())
+        }
+    }
+
+    #[test]
+    fn test_is_valid_config() {
+        let mut config = RaffiConfig {
+            binary: Some("test-binary".to_string()),
+            description: Some("Test Description".to_string()),
+            script: None,
+            args: None,
+            icon: None,
+            ifenveq: Some(vec!["TEST_VAR".to_string(), "true".to_string()]),
+            ifenvset: Some("ANOTHER_VAR".to_string()),
+            ifenvnotset: Some("MISSING_VAR".to_string()),
+            ifexist: Some("another-binary".to_string()),
+            disabled: None,
+        };
+        let args = Args {
+            help: false,
+            version: false,
+            configfile: None,
+            print_only: false,
+            refresh_cache: false,
+            no_icons: true,
+            default_script_shell: None,
+            ui_type: None,
+            initial_query: None,
+            theme: None,
+            schema: false,
+            debug_file: None,
+        };
+        let env_provider = MockEnvProvider {
+            vars: {
+                let mut vars = HashMap::new();
+                vars.insert("TEST_VAR".to_string(), "true".to_string());
+                vars.insert("ANOTHER_VAR".to_string(), "some_value".to_string());
+                vars
+            },
+        };
+        let binary_checker = MockBinaryChecker {
+            binaries: vec!["test-binary".to_string(), "another-binary".to_string()],
+        };
+
+        assert!(is_valid_config(
+            &mut config,
+            &args,
+            &env_provider,
+            &binary_checker
+        ));
+    }
+
+    #[test]
+    fn test_script_filter_action_parsing() {
+        let yaml_config = r#"
+        addons:
+          script_filters:
+            - name: "Bookmarks"
+              keyword: "bm"
+              command: "my-bookmark-script"
+              args: ["-j"]
+              action: "wl-copy {value}"
+              secondary_action: "xdg-open {value}"
+            - name: "Timezones"
+              keyword: "tz"
+              command: "batz"
+              args: ["-j"]
+        shell:
+          binary: sh
+          description: "Shell"
+        "#;
+        let reader = Cursor::new(yaml_config);
+        let args = Args {
+            help: false,
+            version: false,
+            configfile: None,
+            print_only: false,
+            refresh_cache: false,
+            no_icons: true,
+            default_script_shell: None,
+            ui_type: None,
+            initial_query: None,
+            theme: None,
+            schema: false,
+            debug_file: None,
+        };
+        let parsed_config = read_config_from_reader(reader, &args).unwrap();
+
+        assert_eq!(parsed_config.addons.script_filters.len(), 2);
+
+        let bm = &parsed_config.addons.script_filters[0];
+        assert_eq!(bm.name, "Bookmarks");
+        assert_eq!(bm.action, Some("wl-copy {value}".to_string()));
+        assert_eq!(bm.secondary_action, Some("xdg-open {value}".to_string()));
+
+        let tz = &parsed_config.addons.script_filters[1];
+        assert_eq!(tz.name, "Timezones");
+        assert_eq!(tz.action, None);
+        assert_eq!(tz.secondary_action, None);
+    }
+
+    #[test]
+    fn test_text_snippet_action_parsing() {
+        let yaml_config = r#"
+        addons:
+          text_snippets:
+            - name: "Emails"
+              keyword: "em"
+              action: "wl-copy {value}"
+              secondary_action: "wtype {value}"
+              snippets:
+                - name: "Personal"
+                  value: "user@example.com"
+            - name: "Plain"
+              keyword: "pl"
+              snippets:
+                - name: "Hello"
+                  value: "hello"
+        shell:
+          binary: sh
+          description: "Shell"
+        "#;
+        let reader = Cursor::new(yaml_config);
+        let args = Args {
+            help: false,
+            version: false,
+            configfile: None,
+            print_only: false,
+            refresh_cache: false,
+            no_icons: true,
+            default_script_shell: None,
+            ui_type: None,
+            initial_query: None,
+            theme: None,
+            schema: false,
+            debug_file: None,
+        };
+        let parsed_config = read_config_from_reader(reader, &args).unwrap();
+
+        assert_eq!(parsed_config.addons.text_snippets.len(), 2);
+
+        let em = &parsed_config.addons.text_snippets[0];
+        assert_eq!(em.name, "Emails");
+        assert_eq!(em.action, Some("wl-copy {value}".to_string()));
+        assert_eq!(em.secondary_action, Some("wtype {value}".to_string()));
+
+        let pl = &parsed_config.addons.text_snippets[1];
+        assert_eq!(pl.name, "Plain");
+        assert_eq!(pl.action, None);
+        assert_eq!(pl.secondary_action, None);
+    }
+
+    #[test]
+    fn test_expand_tilde() {
+        let home = std::env::var("HOME").unwrap();
+        assert_eq!(expand_tilde("~/foo/bar"), format!("{home}/foo/bar"));
+    }
+
+    #[test]
+    fn test_expand_tilde_no_tilde() {
+        assert_eq!(expand_tilde("/usr/bin/foo"), "/usr/bin/foo");
+        assert_eq!(expand_tilde("relative/path"), "relative/path");
+    }
+
+    #[test]
+    fn test_expand_env_vars() {
+        let home = std::env::var("HOME").unwrap();
+        assert_eq!(expand_env_vars("${HOME}/foo"), format!("{home}/foo"));
+    }
+
+    #[test]
+    fn test_expand_env_vars_unknown() {
+        assert_eq!(expand_env_vars("${NONEXISTENT_VAR_12345}/foo"), "/foo");
+    }
+
+    #[test]
+    fn test_expand_env_vars_multiple() {
+        let home = std::env::var("HOME").unwrap();
+        let user = std::env::var("USER").unwrap_or_default();
+        assert_eq!(
+            expand_env_vars("${HOME}/stuff/${USER}/data"),
+            format!("{home}/stuff/{user}/data")
+        );
+    }
+
+    #[test]
+    fn test_expand_env_vars_no_vars() {
+        assert_eq!(expand_env_vars("/usr/bin/foo"), "/usr/bin/foo");
+        assert_eq!(expand_env_vars("plain text"), "plain text");
+    }
+
+    #[test]
+    fn test_expand_config_value_combined() {
+        let home = std::env::var("HOME").unwrap();
+        let user = std::env::var("USER").unwrap_or_default();
+        assert_eq!(
+            expand_config_value("~/foo/${USER}/bar"),
+            format!("{home}/foo/{user}/bar")
+        );
+    }
+
+    #[test]
+    fn test_config_expands_env_vars_in_fields() {
+        let home = std::env::var("HOME").unwrap();
+        let yaml_config = r#"
+        version: 1
+        launchers:
+          myapp:
+            binary: "${HOME}/bin/myapp"
+            description: "My App"
+            args: ["${HOME}/Downloads/file.txt", "--verbose"]
+            icon: "${HOME}/icons/myapp.png"
+            ifexist: "${HOME}/bin/myapp"
+        "#;
+        let reader = Cursor::new(yaml_config);
+        let config: super::Config = serde_yaml::from_reader(reader).expect("cannot parse config");
+        let mut rafficonfigs = Vec::new();
+        for value in config.launchers.values() {
+            if value.is_mapping() {
+                let mut mc: RaffiConfig = serde_yaml::from_value(value.clone()).unwrap();
+                mc.binary = mc.binary.map(|s| expand_config_value(&s));
+                mc.icon = mc.icon.map(|s| expand_config_value(&s));
+                mc.ifexist = mc.ifexist.map(|s| expand_config_value(&s));
+                mc.args = mc
+                    .args
+                    .map(|v| v.into_iter().map(|s| expand_config_value(&s)).collect());
+                rafficonfigs.push(mc);
+            }
+        }
+
+        assert_eq!(rafficonfigs.len(), 1);
+        let mc = &rafficonfigs[0];
+        assert_eq!(mc.binary, Some(format!("{home}/bin/myapp")));
+        assert_eq!(mc.icon, Some(format!("{home}/icons/myapp.png")));
+        assert_eq!(mc.ifexist, Some(format!("{home}/bin/myapp")));
+        assert_eq!(
+            mc.args,
+            Some(vec![
+                format!("{home}/Downloads/file.txt"),
+                "--verbose".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn test_config_expands_tilde_in_fields() {
+        let home = std::env::var("HOME").unwrap();
+        let yaml_config = r#"
+        version: 1
+        launchers:
+          myapp:
+            binary: "~/bin/myapp"
+            description: "My App"
+            args: ["~/Downloads/file.txt", "--verbose"]
+            icon: "~/icons/myapp.png"
+            ifexist: "~/bin/myapp"
+        "#;
+        let reader = Cursor::new(yaml_config);
+        // Parse and expand manually to avoid is_valid_config filtering out non-existent paths
+        let config: super::Config = serde_yaml::from_reader(reader).expect("cannot parse config");
+        let mut rafficonfigs = Vec::new();
+        for value in config.launchers.values() {
+            if value.is_mapping() {
+                let mut mc: RaffiConfig = serde_yaml::from_value(value.clone()).unwrap();
+                mc.binary = mc.binary.map(|s| expand_tilde(&s));
+                mc.icon = mc.icon.map(|s| expand_tilde(&s));
+                mc.ifexist = mc.ifexist.map(|s| expand_tilde(&s));
+                mc.args = mc
+                    .args
+                    .map(|v| v.into_iter().map(|s| expand_tilde(&s)).collect());
+                rafficonfigs.push(mc);
+            }
+        }
+
+        assert_eq!(rafficonfigs.len(), 1);
+        let mc = &rafficonfigs[0];
+        assert_eq!(mc.binary, Some(format!("{home}/bin/myapp")));
+        assert_eq!(mc.icon, Some(format!("{home}/icons/myapp.png")));
+        assert_eq!(mc.ifexist, Some(format!("{home}/bin/myapp")));
+        assert_eq!(
+            mc.args,
+            Some(vec![
+                format!("{home}/Downloads/file.txt"),
+                "--verbose".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn test_general_config_parsing() {
+        let yaml_config = r#"
+        general:
+          ui_type: native
+          default_script_shell: zsh
+          no_icons: true
+        shell:
+          binary: sh
+          description: "Shell"
+        "#;
+        let reader = Cursor::new(yaml_config);
+        let args = Args {
+            help: false,
+            version: false,
+            configfile: None,
+            print_only: false,
+            refresh_cache: false,
+            no_icons: false,
+            default_script_shell: None,
+            ui_type: None,
+            initial_query: None,
+            theme: None,
+            schema: false,
+            debug_file: None,
+        };
+        let parsed_config = read_config_from_reader(reader, &args).unwrap();
+
+        assert_eq!(parsed_config.general.ui_type, Some("native".to_string()));
+        assert_eq!(
+            parsed_config.general.default_script_shell,
+            Some("zsh".to_string())
+        );
+        assert_eq!(parsed_config.general.no_icons, Some(true));
+        assert_eq!(parsed_config.entries.len(), 1);
+    }
+
+    #[test]
+    fn test_config_without_general_section() {
+        let yaml_config = r#"
+        shell:
+          binary: sh
+          description: "Shell"
+        "#;
+        let reader = Cursor::new(yaml_config);
+        let args = Args {
+            help: false,
+            version: false,
+            configfile: None,
+            print_only: false,
+            refresh_cache: false,
+            no_icons: false,
+            default_script_shell: None,
+            ui_type: None,
+            initial_query: None,
+            theme: None,
+            schema: false,
+            debug_file: None,
+        };
+        let parsed_config = read_config_from_reader(reader, &args).unwrap();
+
+        assert!(parsed_config.general.ui_type.is_none());
+        assert!(parsed_config.general.default_script_shell.is_none());
+        assert!(parsed_config.general.no_icons.is_none());
+        assert_eq!(parsed_config.entries.len(), 1);
+    }
+
+    #[test]
+    fn test_partial_general_config() {
+        let yaml_config = r#"
+        general:
+          no_icons: true
+        shell:
+          binary: sh
+          description: "Shell"
+        "#;
+        let reader = Cursor::new(yaml_config);
+        let args = Args {
+            help: false,
+            version: false,
+            configfile: None,
+            print_only: false,
+            refresh_cache: false,
+            no_icons: false,
+            default_script_shell: None,
+            ui_type: None,
+            initial_query: None,
+            theme: None,
+            schema: false,
+            debug_file: None,
+        };
+        let parsed_config = read_config_from_reader(reader, &args).unwrap();
+
+        assert!(parsed_config.general.ui_type.is_none());
+        assert!(parsed_config.general.default_script_shell.is_none());
+        assert_eq!(parsed_config.general.no_icons, Some(true));
+        assert_eq!(parsed_config.entries.len(), 1);
+    }
+
+    #[test]
+    fn test_general_config_ui_settings_parsing() {
+        let yaml_config = r#"
+        general:
+          font_size: 16
+          font_family: "Inter"
+          window_width: 900
+          window_height: 500
+        shell:
+          binary: sh
+          description: "Shell"
+        "#;
+        let reader = Cursor::new(yaml_config);
+        let args = Args {
+            help: false,
+            version: false,
+            configfile: None,
+            print_only: false,
+            refresh_cache: false,
+            no_icons: false,
+            default_script_shell: None,
+            ui_type: None,
+            initial_query: None,
+            theme: None,
+            schema: false,
+            debug_file: None,
+        };
+        let parsed_config = read_config_from_reader(reader, &args).unwrap();
+        assert_eq!(parsed_config.general.font_size, Some(16.0));
+        assert_eq!(parsed_config.general.font_family, Some("Inter".to_string()));
+        assert_eq!(parsed_config.general.window_width, Some(900.0));
+        assert_eq!(parsed_config.general.window_height, Some(500.0));
+    }
+
+    #[test]
+    fn test_general_config_theme_parsing() {
+        let yaml_config = r#"
+        general:
+          theme: light
+        shell:
+          binary: sh
+          description: "Shell"
+        "#;
+        let reader = Cursor::new(yaml_config);
+        let args = Args {
+            help: false,
+            version: false,
+            configfile: None,
+            print_only: false,
+            refresh_cache: false,
+            no_icons: false,
+            default_script_shell: None,
+            ui_type: None,
+            initial_query: None,
+            theme: None,
+            schema: false,
+            debug_file: None,
+        };
+        let parsed_config = read_config_from_reader(reader, &args).unwrap();
+        assert_eq!(parsed_config.general.theme, Some("light".to_string()));
+    }
+
+    #[test]
+    fn test_theme_mode_from_str() {
+        assert_eq!("dark".parse::<ThemeMode>().unwrap(), ThemeMode::Dark);
+        assert_eq!("Dark".parse::<ThemeMode>().unwrap(), ThemeMode::Dark);
+        assert_eq!("DARK".parse::<ThemeMode>().unwrap(), ThemeMode::Dark);
+        assert_eq!("light".parse::<ThemeMode>().unwrap(), ThemeMode::Light);
+        assert_eq!("Light".parse::<ThemeMode>().unwrap(), ThemeMode::Light);
+        assert_eq!("LIGHT".parse::<ThemeMode>().unwrap(), ThemeMode::Light);
+        assert!("invalid".parse::<ThemeMode>().is_err());
+    }
+
+    #[test]
+    fn test_url_encode_query() {
+        assert_eq!(url_encode_query("hello"), "hello");
+        assert_eq!(url_encode_query("hello world"), "hello%20world");
+        assert_eq!(url_encode_query("rust traits"), "rust%20traits");
+        assert_eq!(url_encode_query("a+b"), "a%2Bb");
+        assert_eq!(url_encode_query("foo&bar=baz"), "foo%26bar%3Dbaz");
+        assert_eq!(url_encode_query(""), "");
+        assert_eq!(url_encode_query("A-Z_0.9~"), "A-Z_0.9~");
+    }
+
+    #[test]
+    fn test_web_search_config_parsing() {
+        let yaml_config = r#"
+        addons:
+          web_searches:
+            - name: "Google"
+              keyword: "g"
+              url: "https://google.com/search?q={query}"
+              icon: "google"
+            - name: "DuckDuckGo"
+              keyword: "ddg"
+              url: "https://duckduckgo.com/?q={query}"
+        shell:
+          binary: sh
+          description: "Shell"
+        "#;
+        let reader = Cursor::new(yaml_config);
+        let args = Args {
+            help: false,
+            version: false,
+            configfile: None,
+            print_only: false,
+            refresh_cache: false,
+            no_icons: true,
+            default_script_shell: None,
+            ui_type: None,
+            initial_query: None,
+            theme: None,
+            schema: false,
+            debug_file: None,
+        };
+        let parsed_config = read_config_from_reader(reader, &args).unwrap();
+
+        assert_eq!(parsed_config.addons.web_searches.len(), 2);
+
+        let google = &parsed_config.addons.web_searches[0];
+        assert_eq!(google.name, "Google");
+        assert_eq!(google.keyword, "g");
+        assert_eq!(google.url, "https://google.com/search?q={query}");
+        assert_eq!(google.icon, Some("google".to_string()));
+
+        let ddg = &parsed_config.addons.web_searches[1];
+        assert_eq!(ddg.name, "DuckDuckGo");
+        assert_eq!(ddg.keyword, "ddg");
+        assert_eq!(ddg.url, "https://duckduckgo.com/?q={query}");
+        assert!(ddg.icon.is_none());
+    }
+
+    #[test]
+    fn test_text_snippet_config_parsing() {
+        let yaml_config = r#"
+        addons:
+          text_snippets:
+            - name: "Emails"
+              keyword: "em"
+              icon: "mail"
+              snippets:
+                - name: "Personal Email"
+                  value: "user@example.com"
+                - name: "Work Email"
+                  value: "user@company.com"
+            - name: "Templates"
+              keyword: "tpl"
+              file: "~/.config/raffi/snippets.yaml"
+            - name: "Dynamic"
+              keyword: "dyn"
+              command: "my-snippet-gen"
+              args: ["-j"]
+        shell:
+          binary: sh
+          description: "Shell"
+        "#;
+        let reader = Cursor::new(yaml_config);
+        let args = Args {
+            help: false,
+            version: false,
+            configfile: None,
+            print_only: false,
+            refresh_cache: false,
+            no_icons: true,
+            default_script_shell: None,
+            ui_type: None,
+            initial_query: None,
+            theme: None,
+            schema: false,
+            debug_file: None,
+        };
+        let parsed_config = read_config_from_reader(reader, &args).unwrap();
+
+        assert_eq!(parsed_config.addons.text_snippets.len(), 3);
+
+        // Inline snippets source
+        let emails = &parsed_config.addons.text_snippets[0];
+        assert_eq!(emails.name, "Emails");
+        assert_eq!(emails.keyword, "em");
+        assert_eq!(emails.icon, Some("mail".to_string()));
+        let snippets = emails.snippets.as_ref().unwrap();
+        assert_eq!(snippets.len(), 2);
+        assert_eq!(snippets[0].name, "Personal Email");
+        assert_eq!(snippets[0].value, "user@example.com");
+        assert_eq!(snippets[1].name, "Work Email");
+        assert_eq!(snippets[1].value, "user@company.com");
+
+        // File source
+        let templates = &parsed_config.addons.text_snippets[1];
+        assert_eq!(templates.name, "Templates");
+        assert_eq!(templates.keyword, "tpl");
+        let home = std::env::var("HOME").unwrap();
+        assert_eq!(
+            templates.file,
+            Some(format!("{home}/.config/raffi/snippets.yaml"))
+        );
+        assert!(templates.snippets.is_none());
+        assert!(templates.command.is_none());
+
+        // Command source
+        let dynamic = &parsed_config.addons.text_snippets[2];
+        assert_eq!(dynamic.name, "Dynamic");
+        assert_eq!(dynamic.keyword, "dyn");
+        assert_eq!(dynamic.command, Some("my-snippet-gen".to_string()));
+        assert_eq!(dynamic.args, vec!["-j".to_string()]);
+        assert!(dynamic.snippets.is_none());
+        assert!(dynamic.file.is_none());
+    }
+
+    #[test]
+    fn test_text_snippet_directory_config_parsing() {
+        let yaml_config = r#"
+        addons:
+          text_snippets:
+            - name: "Snippets"
+              keyword: "sn"
+              icon: "snippets"
+              directory: "~/.local/share/snippets"
+        shell:
+          binary: sh
+          description: "Shell"
+        "#;
+        let reader = Cursor::new(yaml_config);
+        let args = Args {
+            help: false,
+            version: false,
+            configfile: None,
+            print_only: false,
+            refresh_cache: false,
+            no_icons: true,
+            default_script_shell: None,
+            ui_type: None,
+            initial_query: None,
+            theme: None,
+            schema: false,
+            debug_file: None,
+        };
+        let parsed_config = read_config_from_reader(reader, &args).unwrap();
+
+        assert_eq!(parsed_config.addons.text_snippets.len(), 1);
+        let snippets_dir = &parsed_config.addons.text_snippets[0];
+        assert_eq!(snippets_dir.name, "Snippets");
+        assert_eq!(snippets_dir.keyword, "sn");
+        assert_eq!(snippets_dir.icon, Some("snippets".to_string()));
+        let home = std::env::var("HOME").unwrap();
+        assert_eq!(
+            snippets_dir.directory,
+            Some(format!("{home}/.local/share/snippets"))
+        );
+        assert!(snippets_dir.snippets.is_none());
+        assert!(snippets_dir.file.is_none());
+        assert!(snippets_dir.command.is_none());
+    }
+
+    #[test]
+    fn test_text_snippet_defaults_to_empty() {
+        let yaml_config = r#"
+        shell:
+          binary: sh
+          description: "Shell"
+        "#;
+        let reader = Cursor::new(yaml_config);
+        let args = Args {
+            help: false,
+            version: false,
+            configfile: None,
+            print_only: false,
+            refresh_cache: false,
+            no_icons: true,
+            default_script_shell: None,
+            ui_type: None,
+            initial_query: None,
+            theme: None,
+            schema: false,
+            debug_file: None,
+        };
+        let parsed_config = read_config_from_reader(reader, &args).unwrap();
+        assert!(parsed_config.addons.text_snippets.is_empty());
+    }
+
+    #[test]
+    fn test_emoji_addon_config_parsing() {
+        let yaml_config = r#"
+        addons:
+          emoji:
+            enabled: true
+            trigger: "em"
+            action: "insert"
+            secondary_action: "copy"
+            data_files:
+              - emojis_smileys_emotion
+              - nerd_font
+        shell:
+          binary: sh
+          description: "Shell"
+        "#;
+        let reader = Cursor::new(yaml_config);
+        let args = Args {
+            help: false,
+            version: false,
+            configfile: None,
+            print_only: false,
+            refresh_cache: false,
+            no_icons: true,
+            default_script_shell: None,
+            ui_type: None,
+            initial_query: None,
+            theme: None,
+            schema: false,
+            debug_file: None,
+        };
+        let parsed_config = read_config_from_reader(reader, &args).unwrap();
+
+        assert!(parsed_config.addons.emoji.enabled);
+        assert_eq!(parsed_config.addons.emoji.trigger, Some("em".to_string()));
+        assert_eq!(
+            parsed_config.addons.emoji.action,
+            Some("insert".to_string())
+        );
+        assert_eq!(
+            parsed_config.addons.emoji.secondary_action,
+            Some("copy".to_string())
+        );
+        assert_eq!(
+            parsed_config.addons.emoji.data_files,
+            Some(vec![
+                "emojis_smileys_emotion".to_string(),
+                "nerd_font".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn test_emoji_addon_defaults_to_enabled() {
+        let yaml_config = r#"
+        shell:
+          binary: sh
+          description: "Shell"
+        "#;
+        let reader = Cursor::new(yaml_config);
+        let args = Args {
+            help: false,
+            version: false,
+            configfile: None,
+            print_only: false,
+            refresh_cache: false,
+            no_icons: true,
+            default_script_shell: None,
+            ui_type: None,
+            initial_query: None,
+            theme: None,
+            schema: false,
+            debug_file: None,
+        };
+        let parsed_config = read_config_from_reader(reader, &args).unwrap();
+
+        // Emoji addon is enabled by default
+        assert!(parsed_config.addons.emoji.enabled);
+        assert!(parsed_config.addons.emoji.trigger.is_none());
+        assert!(parsed_config.addons.emoji.action.is_none());
+        assert!(parsed_config.addons.emoji.secondary_action.is_none());
+        assert!(parsed_config.addons.emoji.data_files.is_none());
+    }
+
+    #[test]
+    fn test_v0_config_migrated_in_memory() {
+        // v0 format: launcher entries at top level (no version field)
+        let yaml_config = r#"
+        general:
+          no_icons: true
+        addons:
+          calculator:
+            enabled: false
+        shell:
+          binary: sh
+          description: "Shell"
+        firefox:
+          binary: firefox
+          description: "Firefox"
+        "#;
+        let reader = Cursor::new(yaml_config);
+        let args = Args {
+            help: false,
+            version: false,
+            configfile: None,
+            print_only: false,
+            refresh_cache: false,
+            no_icons: true,
+            default_script_shell: None,
+            ui_type: None,
+            initial_query: None,
+            theme: None,
+            schema: false,
+            debug_file: None,
+        };
+        let parsed_config = read_config_from_reader(reader, &args).unwrap();
+
+        // general and addons should be preserved
+        assert_eq!(parsed_config.general.no_icons, Some(true));
+        assert!(!parsed_config.addons.calculator.enabled);
+
+        // launcher entries should be found
+        assert_eq!(parsed_config.entries.len(), 2);
+    }
+
+    #[test]
+    fn test_v1_config_passes_through() {
+        // v1 format: entries under launchers key
+        let yaml_config = r#"
+        version: 1
+        general:
+          no_icons: true
+        launchers:
+          shell:
+            binary: sh
+            description: "Shell"
+          firefox:
+            binary: firefox
+            description: "Firefox"
+        "#;
+        let reader = Cursor::new(yaml_config);
+        let args = Args {
+            help: false,
+            version: false,
+            configfile: None,
+            print_only: false,
+            refresh_cache: false,
+            no_icons: true,
+            default_script_shell: None,
+            ui_type: None,
+            initial_query: None,
+            theme: None,
+            schema: false,
+            debug_file: None,
+        };
+        let parsed_config = read_config_from_reader(reader, &args).unwrap();
+
+        assert_eq!(parsed_config.general.no_icons, Some(true));
+        assert_eq!(parsed_config.entries.len(), 2);
+    }
+
+    #[test]
+    fn test_migrate_v0_to_v1_moves_keys() {
+        let yaml_str = r#"
+        general:
+          no_icons: true
+        addons:
+          calculator:
+            enabled: false
+        shell:
+          binary: sh
+          description: "Shell"
+        firefox:
+          binary: firefox
+          description: "Firefox"
+        "#;
+        let mut raw: Value = serde_yaml::from_str(yaml_str).unwrap();
+
+        // Create a temp file for migration
+        let dir = std::env::temp_dir();
+        let config_path = dir.join("test_migrate_v0.yaml");
+        fs::write(&config_path, yaml_str).unwrap();
+
+        let migrated = migrate_config_v0_to_v1(config_path.to_str().unwrap(), &mut raw).unwrap();
+        assert!(migrated);
+
+        // Check structure after migration
+        let mapping = raw.as_mapping().unwrap();
+        assert!(mapping.contains_key(Value::String("version".to_string())));
+        assert!(mapping.contains_key(Value::String("launchers".to_string())));
+        assert!(mapping.contains_key(Value::String("general".to_string())));
+        assert!(mapping.contains_key(Value::String("addons".to_string())));
+
+        // shell and firefox should NOT be top-level anymore
+        assert!(!mapping.contains_key(Value::String("shell".to_string())));
+        assert!(!mapping.contains_key(Value::String("firefox".to_string())));
+
+        // They should be inside launchers
+        let launchers = mapping
+            .get(Value::String("launchers".to_string()))
+            .unwrap()
+            .as_mapping()
+            .unwrap();
+        assert!(launchers.contains_key(Value::String("shell".to_string())));
+        assert!(launchers.contains_key(Value::String("firefox".to_string())));
+
+        // Backup should exist
+        let backup_path = format!("{}.bak", config_path.to_str().unwrap());
+        assert!(Path::new(&backup_path).exists());
+
+        // Cleanup
+        let _ = fs::remove_file(&config_path);
+        let _ = fs::remove_file(&backup_path);
+    }
+
+    #[test]
+    fn test_migrate_v1_is_noop() {
+        let yaml_str = r#"
+        version: 1
+        launchers:
+          shell:
+            binary: sh
+        "#;
+        let mut raw: Value = serde_yaml::from_str(yaml_str).unwrap();
+
+        let dir = std::env::temp_dir();
+        let config_path = dir.join("test_migrate_v1_noop.yaml");
+        fs::write(&config_path, yaml_str).unwrap();
+
+        let migrated = migrate_config_v0_to_v1(config_path.to_str().unwrap(), &mut raw).unwrap();
+        assert!(!migrated);
+
+        // No backup should be created
+        let backup_path = format!("{}.bak", config_path.to_str().unwrap());
+        assert!(!Path::new(&backup_path).exists());
+
+        // Cleanup
+        let _ = fs::remove_file(&config_path);
+    }
+
+    #[test]
+    fn test_schema_generation() {
+        let schema = generate_schema();
+        let parsed: serde_json::Value = serde_json::from_str(&schema).unwrap();
+
+        // Should be a valid JSON Schema
+        assert_eq!(parsed["type"], "object");
+
+        // Should have our top-level properties
+        let props = parsed["properties"].as_object().unwrap();
+        assert!(props.contains_key("version"));
+        assert!(props.contains_key("general"));
+        assert!(props.contains_key("addons"));
+        assert!(props.contains_key("launchers"));
+    }
+
+    #[test]
+    fn test_find_binary_accepts_paths() {
+        let dir = temp_test_dir("find-binary");
+        let binary = dir.join("custom-tool");
+        fs::write(&binary, "#!/bin/sh\n").unwrap();
+
+        assert!(find_binary(binary.to_str().unwrap()));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_parse_desktop_exec_strips_field_codes() {
+        let (binary, args) = parse_desktop_exec(
+            r#"/usr/bin/env BAMF_DESKTOP_FILE_HINT=%k /usr/bin/firefox --new-window %U"#,
+        )
+        .unwrap();
+
+        assert_eq!(binary, "/usr/bin/env");
+        assert_eq!(
+            args,
+            vec![
+                "BAMF_DESKTOP_FILE_HINT=".to_string(),
+                "/usr/bin/firefox".to_string(),
+                "--new-window".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_detect_desktop_entries_from_dirs() {
+        let dir = temp_test_dir("desktop-detect");
+        let apps_dir = dir.join("applications");
+        fs::create_dir_all(&apps_dir).unwrap();
+
+        fs::write(
+            apps_dir.join("firefox.desktop"),
+            r#"[Desktop Entry]
+Type=Application
+Name=Firefox
+Exec=firefox %U
+Icon=firefox
+"#,
+        )
+        .unwrap();
+        fs::write(
+            apps_dir.join("hidden.desktop"),
+            r#"[Desktop Entry]
+Type=Application
+Name=Hidden App
+Exec=hidden-app
+Hidden=true
+"#,
+        )
+        .unwrap();
+        fs::write(
+            apps_dir.join("missing-tryexec.desktop"),
+            r#"[Desktop Entry]
+Type=Application
+Name=Missing TryExec
+Exec=missing-app
+TryExec=missing-app
+"#,
+        )
+        .unwrap();
+        fs::write(
+            apps_dir.join("terminal.desktop"),
+            r#"[Desktop Entry]
+Type=Application
+Name=Terminal App
+Exec=terminal-app
+Terminal=true
+"#,
+        )
+        .unwrap();
+
+        let checker = MockBinaryChecker {
+            binaries: vec!["firefox".to_string()],
+        };
+        let detected = detect_desktop_entries_from_dirs(&[apps_dir], &checker);
+
+        assert_eq!(detected.len(), 1);
+        assert_eq!(detected[0].description.as_deref(), Some("Firefox"));
+        assert_eq!(detected[0].binary.as_deref(), Some("firefox"));
+        assert!(detected[0].args.as_deref().unwrap_or(&[]).is_empty());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_desktop_entry_icon_map_from_dirs_uses_real_exec_binary() {
+        let dir = temp_test_dir("desktop-icon-map");
+        let apps_dir = dir.join("applications");
+        fs::create_dir_all(&apps_dir).unwrap();
+
+        fs::write(
+            apps_dir.join("firefox.desktop"),
+            r#"[Desktop Entry]
+Type=Application
+Name=Firefox
+Exec=/usr/bin/env BAMF_DESKTOP_FILE_HINT=%k /usr/bin/firefox --new-window %U
+Icon=firefox
+"#,
+        )
+        .unwrap();
+
+        let checker = MockBinaryChecker {
+            binaries: vec![
+                "/usr/bin/env".to_string(),
+                "/usr/bin/firefox".to_string(),
+                "firefox".to_string(),
+            ],
+        };
+        let icon_map = desktop_entry_icon_map_from_dirs(&[apps_dir], &checker);
+
+        assert_eq!(
+            icon_map.get("/usr/bin/firefox"),
+            Some(&"firefox".to_string())
+        );
+        assert_eq!(icon_map.get("firefox"), Some(&"firefox".to_string()));
+        assert!(!icon_map.contains_key("/usr/bin/env"));
+        assert!(!icon_map.contains_key("env"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_resolve_launcher_icon_path_uses_launcher_args_for_lookup() {
+        let config = RaffiConfig {
+            binary: Some("jumpapp".to_string()),
+            args: Some(vec!["-X".to_string(), "firefox".to_string()]),
+            description: Some("Firefox".to_string()),
+            ..Default::default()
+        };
+        let icon_map = HashMap::from([("firefox".to_string(), "/icons/firefox.svg".to_string())]);
+
+        let resolved = resolve_launcher_icon_path(&config, &icon_map, &HashMap::new());
+
+        assert_eq!(resolved.as_deref(), Some("/icons/firefox.svg"));
+    }
+
+    #[test]
+    fn test_resolve_launcher_icon_path_uses_desktop_icon_map() {
+        let config = RaffiConfig {
+            binary: Some("custom-launcher".to_string()),
+            description: Some("Firefox".to_string()),
+            ..Default::default()
+        };
+        let icon_map = HashMap::from([("firefox".to_string(), "/icons/firefox.svg".to_string())]);
+        let desktop_icon_map =
+            HashMap::from([("custom-launcher".to_string(), "firefox".to_string())]);
+
+        let resolved = resolve_launcher_icon_path(&config, &icon_map, &desktop_icon_map);
+
+        assert_eq!(resolved.as_deref(), Some("/icons/firefox.svg"));
+    }
+
+    #[test]
+    fn test_resolve_icon_reference_ignores_non_icon_files() {
+        let dir = temp_test_dir("resolve-icon-reference");
+        let binary_path = dir.join("firefox");
+        fs::write(&binary_path, "#!/bin/sh\n").unwrap();
+
+        let icon_map = HashMap::from([("firefox".to_string(), "/icons/firefox.svg".to_string())]);
+        let resolved = resolve_icon_reference(binary_path.to_str().unwrap(), &icon_map);
+
+        assert_eq!(resolved.as_deref(), Some("/icons/firefox.svg"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_resolve_icon_reference_ignores_directories() {
+        let dir = temp_test_dir("resolve-icon-directory");
+        let resolved = resolve_icon_reference(dir.to_str().unwrap(), &HashMap::new());
+
+        assert!(resolved.is_none());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_default_icon_path_materializes_bundled_icon_without_repo_cwd() {
+        let cache_root = temp_test_dir("default-icon-cache");
+        let cwd = temp_test_dir("default-icon-cwd");
+        let previous_cache_home = std::env::var_os("XDG_CACHE_HOME");
+        let previous_cwd = std::env::current_dir().unwrap();
+
+        std::env::set_var("XDG_CACHE_HOME", &cache_root);
+        std::env::set_current_dir(&cwd).unwrap();
+
+        let result = (|| {
+            let resolved = default_icon_path(&HashMap::new()).unwrap();
+            let resolved_path = PathBuf::from(&resolved);
+
+            assert!(resolved_path.exists());
+            assert_eq!(
+                resolved_path.file_name().and_then(|name| name.to_str()),
+                Some("default_icon.svg")
+            );
+            assert_eq!(fs::read(&resolved_path).unwrap(), DEFAULT_ICON_BYTES);
+        })();
+
+        std::env::set_current_dir(previous_cwd).unwrap();
+        match previous_cache_home {
+            Some(value) => std::env::set_var("XDG_CACHE_HOME", value),
+            None => std::env::remove_var("XDG_CACHE_HOME"),
+        }
+
+        let _ = fs::remove_dir_all(cache_root);
+        let _ = fs::remove_dir_all(cwd);
+
+        result
+    }
+}

@@ -1,0 +1,177 @@
+---
+title: Configuration Overview
+description: Learn how to configure Raffi's launcher entries and settings
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+## Configuration File Location
+
+Raffi's configuration is stored in:
+
+```
+$HOME/.config/raffi/raffi.yaml
+```
+
+You can override this location using the `-c` or `--configfile` flag:
+
+```bash
+raffi --configfile /path/to/custom/config.yaml
+```
+
+## Basic Structure
+
+The configuration file is a YAML file with three main sections:
+
+1. **General settings** - UI preferences, theme, fonts, window dimensions
+2. **Entries** - Application launcher entries
+3. **Addons** - Optional features like script filters, web searches, text snippets
+
+### Minimal Example
+
+```yaml
+launchers:
+  firefox:
+    binary: firefox
+    args: [--marionette]
+    icon: firefox
+    description: Firefox browser with marionette enabled
+```
+
+### Complete Structure
+
+```yaml
+version: 1
+
+# General settings (optional)
+general:
+  ui_type: native
+  theme: dark
+  font_size: 20
+  window_width: 800
+  window_height: 600
+
+# Launcher entries
+launchers:
+  firefox:
+    binary: firefox
+    description: "Firefox"
+    icon: firefox
+    args: ["--marionette"]
+
+  terminal:
+    binary: kitty
+    description: "Terminal"
+    icon: terminal
+
+# Addons (optional)
+addons:
+  script_filters:
+    - name: "Timezones"
+      keyword: "tz"
+      command: "batz"
+      args: ["-j"]
+
+  web_searches:
+    - name: "Google"
+      keyword: "g"
+      url: "https://google.com/search?q={query}"
+```
+
+## Configuration Sections
+
+<div class="nav-cards">
+  <CardGrid>
+    <a href="/configuration/general-settings/">
+      <Card title="General Settings" icon="setting">
+        UI type, theme, fonts, and window settings
+      </Card>
+    </a>
+    <a href="/configuration/entries/">
+      <Card title="Entries" icon="rocket">
+        Define launcher entries with binaries, scripts, and arguments
+      </Card>
+    </a>
+    <a href="/configuration/icons/">
+      <Card title="Icons" icon="star">
+        Icon caching, discovery, and path configuration
+      </Card>
+    </a>
+    <a href="/configuration/scripts/">
+      <Card title="Scripts" icon="pencil">
+        Inline scripts with bash, python, or custom interpreters
+      </Card>
+    </a>
+    <a href="/configuration/conditions/">
+      <Card title="Conditions" icon="magnifier">
+        Conditional visibility based on environment or binary existence
+      </Card>
+    </a>
+    <a href="/reference/addon-configuration/">
+      <Card title="Addons" icon="puzzle">
+        Optional features like script filters, web searches, and text snippets
+      </Card>
+    </a>
+  </CardGrid>
+</div>
+
+<style>
+{`
+  .nav-cards a {
+    text-decoration: none !important;
+    color: inherit;
+    display: flex;
+    height: 100%;
+  }
+  .nav-cards a article {
+    flex: 1;
+    transition: all 0.2s ease-in-out;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    border: 1px solid var(--sl-color-gray-5);
+    background-color: var(--sl-color-black);
+  }
+  .nav-cards a article .title {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+    font-size: 1.2rem;
+  }
+  .nav-cards a article .title .icon {
+    font-size: 2.5rem !important; /* Huge icons */
+    color: var(--sl-color-purple);
+    background: var(--sl-color-purple-low);
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--sl-color-purple);
+  }
+  .nav-cards a:hover article {
+    border-color: var(--sl-color-text-accent);
+    background-color: var(--sl-color-gray-6);
+  }
+`}
+</style>
+
+## Path Expansion
+
+Most configuration fields support path expansion:
+
+- `~/` expands to your home directory
+- `${VAR}` expands to environment variable values
+- Unset variables expand to empty strings
+
+```yaml
+launchers:
+  myapp:
+    binary: ${HOME}/bin/myapp
+    args: ["${XDG_DATA_HOME}/files", "~/Documents"]
+    icon: ~/icons/myapp.png
+    ifexist: ~/bin/myapp
+```
+
+<Aside type="note">
+Path expansion is **not** applied to script content (`script` field). Only use it for paths, binaries, icons, and arguments.
+</Aside>

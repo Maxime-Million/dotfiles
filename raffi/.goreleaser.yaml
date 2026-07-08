@@ -1,0 +1,74 @@
+version: 2
+project_name: raffi
+builds:
+  - main: dummy.go
+    goos:
+      - linux
+    goarch:
+      - amd64
+    binary: raffi
+    hooks:
+      post: /bin/bash -c "install -m755 target/linux_amd64/raffi/raffi dist/raffi_linux_amd64_v1/raffi"
+archives:
+  - name_template: >-
+      {{ .Binary }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else if eq .Arch "darwin" }}MacOS
+      {{- else if eq .Arch "linux" }}Linux
+      {{- else if eq .Arch "windows" }}Windows
+      {{- else }}{{ .Arch }}{{ end }}
+    files:
+      - LICENSE
+      - README.md
+checksum:
+  name_template: "checksums.txt"
+
+nfpms:
+  - file_name_template: >-
+      raffi-
+      {{- .Version}}_{{.Os}}-
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else if eq .Arch "darwin" }}MacOS
+      {{- else if eq .Arch "linux" }}Linux
+      {{- else if eq .Arch "windows" }}Windows
+      {{- else }}{{ .Arch }}{{ end }}
+    homepage: https://github.com/chmouel/raffi
+    description: raffi - fuzzel launcher based on yaml configuration
+    maintainer: Chmouel Boudjnah <chmouel@chmouel.com>
+    license: Apache 2.0
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/bin
+
+changelog:
+  disable: true
+
+universal_binaries:
+  - replace: true
+    name_template: "raffi"
+
+release:
+  prerelease: "false"
+
+aurs:
+  - name: raffi-bin
+    homepage: "https://github.com/chmouel/raffi"
+    description: "raffi - fuzzel launcher based on yaml configuration"
+    maintainers:
+      - "Chmouel Boudjnah <chmouel@chmouel.com>"
+    license: Apache 2.0
+    private_key: "{{ .Env.AUR_PRIVATE_KEY }}"
+    git_url: ssh://aur@aur.archlinux.org/raffi-bin.git
+    depends:
+      - fuzzel
+    package: |
+      # bin
+      install -Dm755 "./raffi" "${pkgdir}/usr/bin/raffi"
+
+      # license
+      install -Dm644 "./LICENSE" "${pkgdir}/usr/share/licenses/raffi/LICENSE"

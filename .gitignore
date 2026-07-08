@@ -1,0 +1,8 @@
+raffi/target
+raffi/tmp/*
+raffi/release-notes.md
+
+# Website
+raffi/website/node_modules/
+raffi/website/dist/
+raffi/website/.astro/
